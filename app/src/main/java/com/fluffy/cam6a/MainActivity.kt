@@ -1,8 +1,7 @@
 package com.fluffy.cam6a
 
+import PhotoScreen
 import android.os.Bundle
-import android.Manifest
-import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -21,38 +20,27 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-
 import com.fluffy.cam6a.ui.theme.Cam6ATheme
 import com.fluffy.cam6a.ui.SplashScreen
-import com.fluffy.cam6a.photo.PhotoScreen
-import com.fluffy.cam6a.video.VideoScreen
 import com.fluffy.cam6a.utils.PermissionHelper
-import com.fluffy.cam6a.utils.FileHelper
+import com.fluffy.cam6a.video.VideoScreen
 
 class MainActivity : ComponentActivity() {
     private lateinit var permissionHelper: PermissionHelper
-    private lateinit var fileHelper: FileHelper
 
-    // Request multiple permissions
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.entries.all { it.value }
-        if (allGranted) {
-            Toast.makeText(this, "All permissions granted", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, "Some permissions denied", Toast.LENGTH_SHORT).show()
+        if (!allGranted) {
+            Toast.makeText(this, "Permissions denied. Cannot use camera!", Toast.LENGTH_SHORT).show()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Initialize helpers
         permissionHelper = PermissionHelper(this)
-        fileHelper = FileHelper(this)
-
-        // Check permissions at startup
         permissionHelper.checkAndRequestPermissions(requestPermissionLauncher)
 
         setContent {
@@ -61,7 +49,7 @@ class MainActivity : ComponentActivity() {
                 var showMainScreen by remember { mutableStateOf(false) }
 
                 if (showMainScreen) {
-                    AppNavigation(navController)
+                    AppNavigation(navController, this@MainActivity)
                 } else {
                     SplashScreen { showMainScreen = true }
                 }
@@ -71,10 +59,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun AppNavigation(navController: NavHostController) {
+fun AppNavigation(navController: NavHostController, context: ComponentActivity) {
     NavHost(navController = navController, startDestination = "mainScreen") {
         composable("mainScreen") { MainScreen(navController) }
-        composable("photoScreen") { PhotoScreen() }
+        composable("photoScreen") { PhotoScreen(navController) }
         composable("videoScreen") { VideoScreen() }
     }
 }

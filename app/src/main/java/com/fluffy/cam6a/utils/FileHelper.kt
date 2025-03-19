@@ -2,86 +2,49 @@ package com.fluffy.cam6a.utils
 
 import android.content.ContentValues
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import java.io.File
+import android.util.Log
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.OutputStream
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
 class FileHelper(private val context: Context) {
 
     companion object {
+        private const val TAG = "FileHelper"
         private const val FILENAME_FORMAT = "yyyyMMdd_HHmmss"
         private const val IMAGE_PREFIX = "IMG_"
-        private const val VIDEO_PREFIX = "VID_"
         private const val IMAGE_EXTENSION = ".jpg"
-        private const val VIDEO_EXTENSION = ".mp4"
     }
 
-    // Create a new image file in the app-specific directory or shared media collection
-    fun createImageFile(): File {
-        val timeStamp = SimpleDateFormat(FILENAME_FORMAT, Locale.US).format(Date())
-        val fileName = "$IMAGE_PREFIX$timeStamp$IMAGE_EXTENSION"
+    /** ✅ Saves image to gallery and returns the saved URI */
+    fun saveImageToGallery(imageBytes: ByteArray): Uri? {
+        val correctedBytes = correctImageRotation(imageBytes)
+        val imageUri = getImageUri()  // ✅ Get URI before saving
 
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // For Android 10+, use MediaStore
-            val contentValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Cam6A")
+        return try {
+            context.contentResolver.openOutputStream(imageUri)?.use { outputStream: OutputStream ->
+                outputStream.write(correctedBytes)
+                outputStream.flush()
             }
-
-            val uri = context.contentResolver.insert(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                contentValues
-            ) ?: throw RuntimeException("Failed to create media collection entry")
-
-            // Creating an empty file object to return
-            // The actual content will be written to uri directly in the app
-            File(uri.toString())
-        } else {
-            // For older Android versions
-            val storageDir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-            File(storageDir, fileName).apply {
-                parentFile?.mkdirs() // Ensure directory exists
-            }
+            Log.d(TAG, "✅ Image successfully saved: $imageUri")
+            imageUri  // ✅ Return saved URI
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error saving image", e)
+            null
         }
     }
 
-    // Create a new video file in the app-specific directory or shared media collection
-    fun createVideoFile(): File {
-        val timeStamp = SimpleDateFormat(FILENAME_FORMAT, Locale.US).format(Date())
-        val fileName = "$VIDEO_PREFIX$timeStamp$VIDEO_EXTENSION"
-
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // For Android 10+, use MediaStore
-            val contentValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Cam6A")
-            }
-
-            val uri = context.contentResolver.insert(
-                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                contentValues
-            ) ?: throw RuntimeException("Failed to create media collection entry")
-
-            // Creating an empty file object to return
-            File(uri.toString())
-        } else {
-            // For older Android versions
-            val storageDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)
-            File(storageDir, fileName).apply {
-                parentFile?.mkdirs() // Ensure directory exists
-            }
-        }
-    }
-
-    // Get unique Uri for saving media content
-    fun getImageUri(): Uri {
+    /** ✅ Creates a unique Uri for saving an image */
+    private fun getImageUri(): Uri {
         val timeStamp = SimpleDateFormat(FILENAME_FORMAT, Locale.US).format(Date())
         val fileName = "$IMAGE_PREFIX$timeStamp$IMAGE_EXTENSION"
 
@@ -94,27 +57,40 @@ class FileHelper(private val context: Context) {
         }
 
         return context.contentResolver.insert(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            contentValues
-        ) ?: throw RuntimeException("Failed to create media uri")
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues
+        ) ?: throw RuntimeException("❌ Failed to create media URI")
     }
 
-    // Get unique Uri for saving video content
-    fun getVideoUri(): Uri {
-        val timeStamp = SimpleDateFormat(FILENAME_FORMAT, Locale.US).format(Date())
-        val fileName = "$VIDEO_PREFIX$timeStamp$VIDEO_EXTENSION"
+    /** ✅ Fixes image rotation before saving */
+    private fun correctImageRotation(imageBytes: ByteArray): ByteArray {
+        return try {
+            val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+            val exif = ExifInterface(ByteArrayInputStream(imageBytes))
 
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-            put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Cam6A")
+            val rotationDegrees = when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
             }
-        }
 
-        return context.contentResolver.insert(
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            contentValues
-        ) ?: throw RuntimeException("Failed to create media uri")
+            if (rotationDegrees == 0) return imageBytes // No rotation needed
+
+            val rotatedBitmap = rotateBitmap(bitmap, rotationDegrees)
+
+            // Convert rotated bitmap back to ByteArray
+            val outputStream = ByteArrayOutputStream()
+            rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+            outputStream.toByteArray()
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error correcting image rotation", e)
+            imageBytes // Return original if rotation fails
+        }
+    }
+
+    /** ✅ Rotates a bitmap by the given degrees */
+    private fun rotateBitmap(bitmap: Bitmap, degrees: Int): Bitmap {
+        val matrix = android.graphics.Matrix().apply { postRotate(degrees.toFloat()) }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 }
