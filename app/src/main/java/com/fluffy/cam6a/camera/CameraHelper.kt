@@ -5,447 +5,322 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.Matrix
-import android.hardware.camera2.CameraCharacteristics
-import android.hardware.camera2.CameraManager
+import android.graphics.ImageFormat
+import android.graphics.SurfaceTexture
+import android.hardware.camera2.*
+import android.media.ImageReader
+import android.media.MediaRecorder
+import android.net.Uri
+import android.os.*
 import android.util.Log
 import android.util.Size
 import android.view.Surface
-import androidx.camera.core.AspectRatio
-import androidx.camera.core.Camera
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.ImageProxy
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.video.FallbackStrategy
-import androidx.camera.video.FileOutputOptions
-import androidx.camera.video.Quality
-import androidx.camera.video.QualitySelector
-import androidx.camera.video.Recorder
-import androidx.camera.video.Recording
-import androidx.camera.video.VideoCapture
-import androidx.camera.video.VideoRecordEvent
+import android.view.TextureView
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.LifecycleOwner
-import androidx.xr.scenecore.PermissionHelper
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import java.io.File
-import java.util.concurrent.Executors
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
+import com.fluffy.cam6a.utils.FileHelper
+import java.io.IOException
+import java.util.*
 
-/**
- * Helper class for camera operations that can be shared between photo and video screens
- */
-class CameraHelper(private val context: Context) {
-    private val TAG = "CameraHelper"
+class CameraHelper(private val context: Context, private val textureView: TextureView) {
 
-    // Camera properties
-    private var cameraProvider: ProcessCameraProvider? = null
-    private var camera: Camera? = null
-    private var imageCapture: ImageCapture? = null
-    private var videoCapture: VideoCapture<Recorder>? = null
-    private var imageAnalysis: ImageAnalysis? = null
-    private var preview: Preview? = null
-    private var activeRecording: Recording? = null
+    private var cameraId: String = ""
+    private var cameraDevice: CameraDevice? = null
+    private var captureSession: CameraCaptureSession? = null
+    private var imageReader: ImageReader? = null
+    private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+    private var backgroundThread: HandlerThread? = null
+    private var backgroundHandler: Handler? = null
 
-    // Camera state
-    private val _flashEnabled = MutableStateFlow(false)
-    val flashEnabled: StateFlow<Boolean> = _flashEnabled
+    // Video recording components
+    private var mediaRecorder: MediaRecorder? = null
+    private var isRecording = false
+    private var videoFilePath: String = ""
+    private val fileHelper = FileHelper(context)
 
-    private val _torchEnabled = MutableStateFlow(false)
-    val torchEnabled: StateFlow<Boolean> = _torchEnabled
-
-    private val _cameraLensFacing = MutableStateFlow(CameraSelector.LENS_FACING_BACK)
-    val cameraLensFacing: StateFlow<Int> = _cameraLensFacing
-
-    private val _isRecording = MutableStateFlow(false)
-    val isRecording: StateFlow<Boolean> = _isRecording
-
-    private val cameraExecutor = Executors.newSingleThreadExecutor()
-
-    /**
-     * Initialize the camera with lifecycle owner
-     */
-    suspend fun initializeCamera(lifecycleOwner: LifecycleOwner): ProcessCameraProvider {
-        return suspendCoroutine { continuation ->
-            val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-
-            cameraProviderFuture.addListener({
-                try {
-                    val provider = cameraProviderFuture.get()
-                    cameraProvider = provider
-                    continuation.resume(provider)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to initialize camera", e)
-                    continuation.resumeWithException(e)
-                }
-            }, ContextCompat.getMainExecutor(context))
-        }
+    init {
+        startBackgroundThread()
+        cameraId = getBackCameraId()
+        Log.d(TAG, "Camera initialized with ID: $cameraId")
     }
 
-    /**
-     * Start camera preview
-     */
-    fun startCameraPreview(
-        lifecycleOwner: LifecycleOwner,
-        previewSurfaceProvider: Preview.SurfaceProvider,
-        imageAnalysisAnalyzer: ImageAnalysis.Analyzer? = null
-    ) {
-        val cameraProvider = cameraProvider ?: return
-
-        try {
-            // Unbind all use cases before rebinding
-            cameraProvider.unbindAll()
-
-            // Camera selector
-            val cameraSelector = CameraSelector.Builder()
-                .requireLensFacing(_cameraLensFacing.value)
-                .build()
-
-            // Preview use case
-            preview = Preview.Builder()
-                .setTargetAspectRatio(AspectRatio.RATIO_16_9)
-                .build()
-                .also {
-                    it.setSurfaceProvider(previewSurfaceProvider)
-                }
-
-            // ImageCapture use case
-            imageCapture = ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .setTargetAspectRatio(AspectRatio.RATIO_16_9)
-                .setFlashMode(if (_flashEnabled.value) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
-                .build()
-
-            // Optional image analysis
-            imageAnalysisAnalyzer?.let {
-                imageAnalysis = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-                    .also { analysis ->
-                        analysis.setAnalyzer(cameraExecutor, it)
-                    }
-            }
-
-            // Bind use cases
-            val useCases = mutableListOf<androidx.camera.core.UseCase>().apply {
-                add(preview!!)
-                add(imageCapture!!)
-                imageAnalysis?.let { add(it) }
-            }
-
-            // Connect camera to use cases
-            camera = cameraProvider.bindToLifecycle(
-                lifecycleOwner,
-                cameraSelector,
-                *useCases.toTypedArray()
-            )
-
-            // Update torch state if available
-            camera?.cameraInfo?.torchState?.observe(lifecycleOwner) { torchState ->
-                _torchEnabled.value = torchState == androidx.camera.core.TorchState.ON
-            }
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Use case binding failed", e)
-        }
+    private fun getBackCameraId(): String {
+        return cameraManager.cameraIdList.find { id ->
+            val characteristics = cameraManager.getCameraCharacteristics(id)
+            characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+        } ?: ""
     }
 
-    /**
-     * Set up video capture
-     */
-    fun setupVideoCapture(lifecycleOwner: LifecycleOwner, previewSurfaceProvider: Preview.SurfaceProvider) {
-        val cameraProvider = cameraProvider ?: return
-
-        try {
-            // Unbind all use cases before rebinding
-            cameraProvider.unbindAll()
-
-            // Camera selector
-            val cameraSelector = CameraSelector.Builder()
-                .requireLensFacing(_cameraLensFacing.value)
-                .build()
-
-            // Setup preview
-            preview = Preview.Builder()
-                .setTargetAspectRatio(AspectRatio.RATIO_16_9)
-                .build()
-                .also {
-                    it.setSurfaceProvider(previewSurfaceProvider)
-                }
-
-            // Setup video capture with quality selector
-            val qualitySelector = QualitySelector.fromOrderedList(
-                listOf(Quality.FHD, Quality.HD, Quality.SD),
-                FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
-            )
-
-            val recorder = Recorder.Builder()
-                .setQualitySelector(qualitySelector)
-                .build()
-
-            videoCapture = VideoCapture.withOutput(recorder)
-
-            // Bind use cases
-            camera = cameraProvider.bindToLifecycle(
-                lifecycleOwner,
-                cameraSelector,
-                preview,
-                videoCapture
-            )
-
-            // Update torch state if available
-            camera?.cameraInfo?.torchState?.observe(lifecycleOwner) { torchState ->
-                _torchEnabled.value = torchState == androidx.camera.core.TorchState.ON
-            }
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Video capture setup failed", e)
-        }
+    private fun getFrontCameraId(): String {
+        return cameraManager.cameraIdList.find { id ->
+            val characteristics = cameraManager.getCameraCharacteristics(id)
+            characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
+        } ?: ""
     }
 
-    /**
-     * Take a photo and save to a file
-     * @param outputFile The file to save the photo to
-     * @param onPhotoCaptured Callback with success/failure result
-     */
-    fun takePhoto(
-        outputFile: File,
-        onPhotoCaptured: (success: Boolean, error: String?, savedUri: android.net.Uri?) -> Unit
-    ) {
-        val imageCapture = imageCapture ?: run {
-            onPhotoCaptured(false, "Camera not initialized", null)
+    private fun startBackgroundThread() {
+        backgroundThread = HandlerThread("CameraBackgroundThread").apply { start() }
+        backgroundHandler = Handler(backgroundThread!!.looper)
+    }
+
+    private fun stopBackgroundThread() {
+        backgroundThread?.quitSafely()
+        backgroundThread?.join()
+        backgroundThread = null
+        backgroundHandler = null
+    }
+
+    @SuppressLint("MissingPermission")
+    fun openCamera() {
+        if (cameraId.isEmpty() || ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "Camera permission not granted or invalid camera ID")
             return
         }
 
-        // Setup output options
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
-
-        // Take the picture
-        imageCapture.takePicture(
-            outputOptions,
-            cameraExecutor,
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                    val savedUri = outputFileResults.savedUri
-                    Log.d(TAG, "Photo saved: $savedUri")
-                    onPhotoCaptured(true, null, savedUri)
+        if (textureView.isAvailable) {
+            startCameraSession()
+        } else {
+            textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+                    startCameraSession()
                 }
 
-                override fun onError(exception: ImageCaptureException) {
-                    Log.e(TAG, "Photo capture failed: ${exception.message}", exception)
-                    onPhotoCaptured(false, exception.message, null)
-                }
+                override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
+                override fun onSurfaceTextureDestroyed(surface: SurfaceTexture) = false
+                override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
             }
-        )
+        }
     }
 
-    /**
-     * Start video recording
-     * @param outputFile The file to save the video to
-     * @param onVideoRecordEvent Callback with video recording events
-     */
-    fun startVideoRecording(
-        outputFile: File,
-        onVideoRecordEvent: (VideoRecordEvent) -> Unit
-    ) {
-        if (_isRecording.value) return
+    private fun startCameraSession() {
+        try {
+            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                return
+            }
 
-        val videoCapture = videoCapture ?: run {
-            Log.e(TAG, "Video capture not initialized")
-            return
+            cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+                override fun onOpened(camera: CameraDevice) {
+                    cameraDevice = camera
+                    createCameraPreviewSession()
+                }
+
+                override fun onDisconnected(camera: CameraDevice) {
+                    camera.close()
+                    cameraDevice = null
+                }
+
+                override fun onError(camera: CameraDevice, error: Int) {
+                    camera.close()
+                    cameraDevice = null
+                }
+            }, backgroundHandler)
+        } catch (e: CameraAccessException) {
+            Log.e(TAG, "Error opening camera: ${e.message}")
+        }
+    }
+
+    private fun createCameraPreviewSession() {
+        val surfaceTexture = textureView.surfaceTexture ?: return
+        surfaceTexture.setDefaultBufferSize(textureView.width, textureView.height)
+        val previewSurface = Surface(surfaceTexture)
+
+        if (imageReader == null) {
+            imageReader = ImageReader.newInstance(textureView.width, textureView.height, ImageFormat.JPEG, 1)
         }
 
-        // Setup output options
-        val outputOptions = FileOutputOptions.Builder(outputFile).build()
+        val captureRequestBuilder = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+        captureRequestBuilder?.addTarget(previewSurface)
 
-        // Start recording
-        activeRecording = videoCapture.output
-            .prepareRecording(context, outputOptions)
-            .apply {
-                if (PermissionHelper(context).hasAudioPermission()) {
-                    if (ActivityCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.RECORD_AUDIO
-                        ) != PackageManager.PERMISSION_GRANTED
-                    ) {
-                        // TODO: Consider calling
-                        //    ActivityCompat#requestPermissions
-                        // here to request the missing permissions, and then overriding
-                        //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                        //                                          int[] grantResults)
-                        // to handle the case where the user grants the permission. See the documentation
-                        // for ActivityCompat#requestPermissions for more details.
-                        return
+        try {
+            cameraDevice?.createCaptureSession(
+                listOf(previewSurface, imageReader!!.surface),
+                object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(session: CameraCaptureSession) {
+                        captureSession = session
+                        captureRequestBuilder?.build()?.let {
+                            captureSession?.setRepeatingRequest(it, null, backgroundHandler)
+                        }
                     }
-                    withAudioEnabled()
-                }
+
+                    override fun onConfigureFailed(session: CameraCaptureSession) {
+                        Log.e(TAG, "Session configuration failed")
+                    }
+                },
+                backgroundHandler
+            )
+        } catch (e: CameraAccessException) {
+            Log.e(TAG, "Error configuring session: ${e.message}")
+        }
+    }
+
+    /** Captures a Bitmap from Camera */
+    fun captureBitmap(): Bitmap? {
+        return try {
+            if (!textureView.isAvailable) {
+                Log.e(TAG, "TextureView is not available")
+                null
+            } else {
+                textureView.bitmap
             }
-            .start(cameraExecutor) { event ->
-                onVideoRecordEvent(event)
-
-                if (event is VideoRecordEvent.Finalize) {
-                    _isRecording.value = false
-                }
-            }
-
-        _isRecording.value = true
-    }
-
-    /**
-     * Stop video recording
-     */
-    fun stopVideoRecording() {
-        if (!_isRecording.value) return
-
-        activeRecording?.stop()
-        activeRecording = null
-    }
-
-    /**
-     * Toggle camera flash mode
-     */
-    fun toggleFlash() {
-        _flashEnabled.value = !_flashEnabled.value
-        imageCapture?.flashMode = if (_flashEnabled.value) {
-            ImageCapture.FLASH_MODE_ON
-        } else {
-            ImageCapture.FLASH_MODE_OFF
-        }
-    }
-
-    /**
-     * Toggle camera torch mode
-     */
-    fun toggleTorch() {
-        camera?.cameraControl?.enableTorch(!_torchEnabled.value)
-    }
-
-    /**
-     * Switch between front and back cameras
-     */
-    fun toggleCamera(lifecycleOwner: LifecycleOwner, previewSurfaceProvider: Preview.SurfaceProvider) {
-        _cameraLensFacing.value = if (_cameraLensFacing.value == CameraSelector.LENS_FACING_BACK) {
-            CameraSelector.LENS_FACING_FRONT
-        } else {
-            CameraSelector.LENS_FACING_BACK
-        }
-
-        // Restart camera with new lens facing
-        startCameraPreview(lifecycleOwner, previewSurfaceProvider)
-    }
-
-    /**
-     * Get image analysis use case setup for filtering
-     */
-    fun getImageAnalysis(): ImageAnalysis {
-        if (imageAnalysis == null) {
-            imageAnalysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-        }
-        return imageAnalysis!!
-    }
-
-    /**
-     * Get the correct rotation for the current device orientation
-     */
-    @SuppressLint("RestrictedApi")
-    fun getImageRotationDegrees(rotation: Int): Int {
-        val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val cameraId = cameraManager.cameraIdList.first()
-        val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-        val sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
-
-        return when (rotation) {
-            Surface.ROTATION_0 -> sensorOrientation
-            Surface.ROTATION_90 -> (sensorOrientation + 270) % 360
-            Surface.ROTATION_180 -> (sensorOrientation + 180) % 360
-            Surface.ROTATION_270 -> (sensorOrientation + 90) % 360
-            else -> sensorOrientation
-        }
-    }
-
-    /**
-     * Helper class for camera permissions
-     */
-    inner class PermissionHelper(private val context: Context) {
-        fun hasAudioPermission(): Boolean {
-            return com.fluffy.cam6a.utils.PermissionHelper.hasAudioPermission(context)
-        }
-    }
-
-    /**
-     * Convert ImageProxy to Bitmap for filtering
-     */
-    fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap {
-        val buffer = imageProxy.planes[0].buffer
-        val bytes = ByteArray(buffer.remaining())
-        buffer.get(bytes)
-
-        val yuvImage = android.graphics.YuvImage(
-            bytes,
-            android.graphics.ImageFormat.NV21,
-            imageProxy.width,
-            imageProxy.height,
+        } catch (e: Exception) {
+            Log.e(TAG, " Error capturing bitmap: ${e.localizedMessage}")
             null
-        )
-
-        val out = java.io.ByteArrayOutputStream()
-        yuvImage.compressToJpeg(
-            android.graphics.Rect(0, 0, imageProxy.width, imageProxy.height),
-            100,
-            out
-        )
-
-        val imageBytes = out.toByteArray()
-        val bitmap = android.graphics.BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-
-        // Apply rotation if needed
-        val matrix = Matrix()
-        matrix.postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
-        return Bitmap.createBitmap(
-            bitmap,
-            0, 0,
-            bitmap.width, bitmap.height,
-            matrix,
-            true
-        )
-    }
-
-    /**
-     * Release camera resources
-     */
-    fun shutdown() {
-        try {
-            cameraExecutor.shutdown()
-            activeRecording?.stop()
-            activeRecording = null
-            cameraProvider?.unbindAll()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error shutting down camera", e)
         }
     }
 
-    /**
-     * Get available camera resolutions
-     */
-    fun getAvailableCameraResolutions(): List<Size> {
-        val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val cameraId = cameraManager.cameraIdList.first()
+    fun closeCamera() {
+        stopBackgroundThread()
+        cameraDevice?.close()
+        cameraDevice = null
+        captureSession?.close()
+        captureSession = null
+        imageReader?.close()
+        imageReader = null
+    }
+
+    fun switchCamera() {
+        cameraId = if (cameraId == getBackCameraId()) getFrontCameraId() else getBackCameraId()
+        closeCamera()
+        openCamera()
+    }
+
+    /** Sets up MediaRecorder for video capture */
+    private fun setupMediaRecorder(): MediaRecorder {
+        val rotation = 0 // You might want to get this from the display rotation
+
+        return MediaRecorder().apply {
+            setAudioSource(MediaRecorder.AudioSource.MIC)
+            setVideoSource(MediaRecorder.VideoSource.SURFACE)
+            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+
+            // Create a new file for the video
+            videoFilePath = fileHelper.createVideoFile().absolutePath
+            setOutputFile(videoFilePath)
+
+            setVideoEncodingBitRate(10_000_000)
+            setVideoFrameRate(30)
+
+            // Get optimal video size
+            val videoSize = getOptimalVideoSize()
+            setVideoSize(videoSize.width, videoSize.height)
+
+            setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            setOrientationHint(rotation)
+
+            try {
+                prepare()
+            } catch (e: IOException) {
+                Log.e(TAG, "Error preparing MediaRecorder: ${e.message}")
+                throw e
+            }
+        }
+    }
+
+    /** Gets optimal video size based on camera characteristics */
+    private fun getOptimalVideoSize(): Size {
         val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+        val streamConfigMap = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
 
-        val streamConfigurationMap = characteristics.get(
-            CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP
-        ) ?: return emptyList()
+        // Get available sizes for MediaRecorder output
+        val videoSizes = streamConfigMap?.getOutputSizes(MediaRecorder::class.java) ?: arrayOf()
 
-        return streamConfigurationMap.getOutputSizes(android.graphics.ImageFormat.JPEG).toList()
+        // Default to 1080p or the highest available resolution below that
+        val targetResolution = Size(1920, 1080)
+
+        return if (videoSizes.isNotEmpty()) {
+            // Find size that is closest to 1080p without exceeding it
+            videoSizes.filter { it.height <= targetResolution.height && it.width <= targetResolution.width }
+                .maxByOrNull { it.width * it.height } ?: videoSizes[0]
+        } else {
+            Size(1280, 720) // Fallback to 720p
+        }
+    }
+
+    /** Starts video recording and returns the URI of the saved file */
+    fun startVideoRecording(): Uri? {
+        if (isRecording) {
+            Log.w(TAG, "Already recording")
+            return null
+        }
+
+        try {
+            // Close any existing preview session
+            captureSession?.close()
+            captureSession = null
+
+            // Initialize MediaRecorder
+            mediaRecorder = setupMediaRecorder()
+
+            // Create surfaces for both preview and recording
+            val surfaceTexture = textureView.surfaceTexture ?: return null
+            surfaceTexture.setDefaultBufferSize(textureView.width, textureView.height)
+            val previewSurface = Surface(surfaceTexture)
+            val recorderSurface = mediaRecorder!!.surface
+
+            // Set up a new capture session with both surfaces
+            val surfaces = listOf(previewSurface, recorderSurface)
+
+            // Create capture request for video recording
+            val captureRequestBuilder = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+            captureRequestBuilder?.addTarget(previewSurface)
+            captureRequestBuilder?.addTarget(recorderSurface)
+
+            cameraDevice?.createCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
+                override fun onConfigured(session: CameraCaptureSession) {
+                    captureSession = session
+                    captureRequestBuilder?.build()?.let {
+                        captureSession?.setRepeatingRequest(it, null, backgroundHandler)
+
+                        // Start recording
+                        mediaRecorder?.start()
+                        isRecording = true
+                        Log.d(TAG, "Started recording to $videoFilePath")
+                    }
+                }
+
+                override fun onConfigureFailed(session: CameraCaptureSession) {
+                    Log.e(TAG, "Failed to configure capture session for video recording")
+                }
+            }, backgroundHandler)
+
+            // Return the URI for the video file
+            return Uri.parse("file://$videoFilePath")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting video recording: ${e.message}")
+            releaseMediaRecorder()
+            return null
+        }
+    }
+
+    /** Stops video recording */
+    fun stopVideoRecording() {
+        if (!isRecording) {
+            Log.w(TAG, "Not recording")
+            return
+        }
+
+        try {
+            // Stop recording
+            mediaRecorder?.stop()
+            Log.d(TAG, "Stopped recording")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping recording: ${e.message}")
+        } finally {
+            releaseMediaRecorder()
+            // Restart the preview
+            startCameraSession()
+        }
+    }
+
+    /** Releases MediaRecorder resources */
+    private fun releaseMediaRecorder() {
+        mediaRecorder?.reset()
+        mediaRecorder?.release()
+        mediaRecorder = null
+        isRecording = false
+    }
+
+    companion object {
+        private const val TAG = "CameraHelper"
     }
 }
