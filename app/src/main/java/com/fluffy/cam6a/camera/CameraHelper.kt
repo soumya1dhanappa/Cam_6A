@@ -2,7 +2,6 @@ package com.fluffy.cam6a.camera
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -16,8 +15,6 @@ import android.view.Surface
 import android.view.TextureView
 import androidx.core.app.ActivityCompat
 
-import java.util.concurrent.Executors
-
 class CameraHelper(private val context: Context, private val textureView: TextureView) {
 
     private var cameraId: String = ""
@@ -27,8 +24,6 @@ class CameraHelper(private val context: Context, private val textureView: Textur
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private var backgroundThread: HandlerThread? = null
     private var backgroundHandler: Handler? = null
-    private val executor = Executors.newSingleThreadExecutor()
-    private var flashEnabled = false
 
     init {
         startBackgroundThread()
