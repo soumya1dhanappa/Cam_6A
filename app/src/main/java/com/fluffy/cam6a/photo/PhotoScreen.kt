@@ -1,11 +1,9 @@
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -21,35 +19,26 @@ import androidx.compose.material.icons.filled.SwitchCamera
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.fluffy.cam6a.photo.PhotoViewModel
+import com.fluffy.cam6a.photo.PhotoViewModelFactory
 import com.fluffy.cam6a.ui.components.CameraPreview
 
-@SuppressLint("ContextCastToActivity")
 @Composable
 fun PhotoScreen(navController: NavController) {
     val context = LocalContext.current.applicationContext as Application
-    val photoViewModel: PhotoViewModel = viewModel(factory = PhotoViewModel.PhotoViewModelFactory(
-        context
-    )
-    )
+    val photoViewModel: PhotoViewModel = viewModel(factory = PhotoViewModelFactory(context))
 
     val captureSuccess by photoViewModel.captureSuccess.observeAsState(initial = false)
     val recentImages by photoViewModel.recentImages.observeAsState(initial = emptyList())
-    ViewModelProvider(
-        LocalContext.current as ComponentActivity,
-        PhotoViewModel.PhotoViewModelFactory(LocalContext.current.applicationContext as Application)
-    )[PhotoViewModel::class.java]
 
     // Fetch recent images when screen loads
     LaunchedEffect(Unit) {
@@ -118,12 +107,12 @@ fun PhotoScreen(navController: NavController) {
     }
 
     if (captureSuccess) {
-        Toast.makeText(context, "✅ Photo saved to Gallery!", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Photo saved to Gallery!", Toast.LENGTH_SHORT).show()
         photoViewModel.resetCaptureSuccess()
     }
 }
 
-/** ✅ Displays recent images in a horizontal row */
+/** Displays recent images in a horizontal row */
 @Composable
 fun RecentImagesRow(images: List<Uri>) {
     if (images.isNotEmpty()) {

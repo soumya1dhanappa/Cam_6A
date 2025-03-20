@@ -4,15 +4,11 @@ import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -29,7 +25,7 @@ class FileHelper(private val context: Context) {
         private const val VIDEO_EXTENSION = ".mp4"
     }
 
-    /** ✅ Saves the captured image to the gallery */
+    /** Saves the captured image to the gallery */
     fun saveImageToGallery(bitmap: Bitmap): Uri? {
         val filename = "$IMAGE_PREFIX${System.currentTimeMillis()}$IMAGE_EXTENSION"
         val contentValues = ContentValues().apply {
@@ -46,7 +42,7 @@ class FileHelper(private val context: Context) {
                 resolver.openOutputStream(uri)?.use { outputStream ->
                     bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
                 }
-                Log.d(TAG, "✅ Image successfully written to $uri")
+                Log.d(TAG, "Image successfully written to $uri")
                 uri
             }
         } catch (e: IOException) {
@@ -55,12 +51,12 @@ class FileHelper(private val context: Context) {
         }
     }
 
-    /** ✅ Logs errors with Log.e */
+    /**  Logs errors with Log.e */
     private fun logError(message: String) {
-        Log.e(TAG, "❌ FileHelper Error: $message")
+        Log.e(TAG, " FileHelper Error: $message")
     }
 
-    /** ✅ Creates a unique Uri for saving an image */
+    /**  Creates a unique Uri for saving an image */
     fun getImageUri(): Uri {
         val timeStamp = SimpleDateFormat(FILENAME_FORMAT, Locale.US).format(Date())
         val fileName = "$IMAGE_PREFIX$timeStamp$IMAGE_EXTENSION"
@@ -75,40 +71,7 @@ class FileHelper(private val context: Context) {
 
         return context.contentResolver.insert(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues
-        ) ?: throw RuntimeException("❌ Failed to create media URI")
-    }
-
-    /** ✅ Fixes image rotation before saving */
-    fun correctImageRotation(imageBytes: ByteArray): ByteArray {
-        return try {
-            val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-            val exif = ExifInterface(ByteArrayInputStream(imageBytes))
-
-            val rotationDegrees = when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-                ExifInterface.ORIENTATION_ROTATE_90 -> 90
-                ExifInterface.ORIENTATION_ROTATE_180 -> 180
-                ExifInterface.ORIENTATION_ROTATE_270 -> 270
-                else -> 0
-            }
-
-            if (rotationDegrees == 0) return imageBytes // No rotation needed
-
-            val rotatedBitmap = rotateBitmap(bitmap, rotationDegrees)
-
-            // Convert rotated bitmap back to ByteArray
-            val outputStream = ByteArrayOutputStream()
-            rotatedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
-            outputStream.toByteArray()
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error correcting image rotation", e)
-            imageBytes // Return original if rotation fails
-        }
-    }
-
-    /** ✅ Rotates a bitmap by the given degrees */
-    private fun rotateBitmap(bitmap: Bitmap, degrees: Int): Bitmap {
-        val matrix = android.graphics.Matrix().apply { postRotate(degrees.toFloat()) }
-        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        ) ?: throw RuntimeException(" Failed to create media URI")
     }
 
     // Create a new image file in the app-specific directory or shared media collection
