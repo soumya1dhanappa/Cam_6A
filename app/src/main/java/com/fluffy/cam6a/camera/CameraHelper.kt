@@ -2,26 +2,18 @@ package com.fluffy.cam6a.camera
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.ImageFormat
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
-import android.media.Image
 import android.media.ImageReader
 import android.os.*
-import android.provider.MediaStore
 import android.util.Log
 import android.view.Surface
 import android.view.TextureView
 import androidx.core.app.ActivityCompat
-import java.io.FileOutputStream
-import java.nio.ByteBuffer
-import java.text.SimpleDateFormat
-import java.util.*
-import java.util.concurrent.Executors
 
 class CameraHelper(private val context: Context, private val textureView: TextureView) {
 
@@ -32,8 +24,6 @@ class CameraHelper(private val context: Context, private val textureView: Textur
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private var backgroundThread: HandlerThread? = null
     private var backgroundHandler: Handler? = null
-    private val executor = Executors.newSingleThreadExecutor()
-    private var flashEnabled = false
 
     init {
         startBackgroundThread()
@@ -154,36 +144,13 @@ class CameraHelper(private val context: Context, private val textureView: Textur
     fun captureBitmap(): Bitmap? {
         return try {
             if (!textureView.isAvailable) {
-                Log.e(TAG, "❌ TextureView is not available")
+                Log.e(TAG, " TextureView is not available")
                 null
             } else {
                 textureView.bitmap
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error capturing bitmap: ${e.localizedMessage}")
-            null
-        }
-    }
-
-    /** ✅ Saves Image to Gallery */
-    fun saveImageToGallery(bitmap: Bitmap): String? {
-        val filename = "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
-        val contentValues = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, filename)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/CameraApp")
-        }
-
-        return try {
-            val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-            uri?.let {
-                context.contentResolver.openOutputStream(it)?.use { outputStream ->
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
-                }
-            }
-            uri?.toString()
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Error saving image: ${e.localizedMessage}")
+            Log.e(TAG, "Error capturing bitmap: ${e.localizedMessage}")
             null
         }
     }
