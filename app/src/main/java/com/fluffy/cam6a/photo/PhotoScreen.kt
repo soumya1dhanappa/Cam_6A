@@ -31,11 +31,16 @@ import coil.compose.AsyncImage
 import com.fluffy.cam6a.photo.PhotoViewModel
 import com.fluffy.cam6a.photo.PhotoViewModelFactory
 import com.fluffy.cam6a.ui.components.CameraPreview
+import com.fluffy.cam6a.video.VideoViewModel
+import com.fluffy.cam6a.video.VideoViewModelFactory
 
 @Composable
 fun PhotoScreen(navController: NavController) {
     val context = LocalContext.current.applicationContext as Application
     val photoViewModel: PhotoViewModel = viewModel(factory = PhotoViewModelFactory(context))
+
+    // Create an instance of VideoViewModel as well
+    val videoViewModel: VideoViewModel = viewModel(factory = VideoViewModelFactory(context))
 
     val captureSuccess by photoViewModel.captureSuccess.observeAsState(initial = false)
     val recentImages by photoViewModel.recentImages.observeAsState(initial = emptyList())
@@ -71,7 +76,11 @@ fun PhotoScreen(navController: NavController) {
                 .weight(1f)
                 .padding(16.dp)
         ) {
-            CameraPreview(modifier = Modifier.fillMaxSize(), photoViewModel)
+            CameraPreview(
+                modifier = Modifier.fillMaxSize(),
+                photoViewModel = photoViewModel,
+                viewModel = videoViewModel
+            )
         }
 
         // Recent Images Row (Displays last 5 clicked images)

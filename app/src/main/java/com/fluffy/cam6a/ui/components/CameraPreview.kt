@@ -17,9 +17,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
 import com.fluffy.cam6a.photo.PhotoViewModel
+import com.fluffy.cam6a.video.VideoViewModel
 
 @Composable
-fun CameraPreview(modifier: Modifier = Modifier, photoViewModel: PhotoViewModel) {
+fun CameraPreview(
+    modifier: Modifier = Modifier,
+    photoViewModel: PhotoViewModel,
+    viewModel: VideoViewModel
+) {
     val context = LocalContext.current
     val updatedViewModel by rememberUpdatedState(photoViewModel)  // Ensures latest ViewModel is used
     var textureView by remember { mutableStateOf<TextureView?>(null) }
