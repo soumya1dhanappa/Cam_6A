@@ -71,7 +71,7 @@ fun SplashScreenContent() {
             modifier = Modifier
                 .size(160.dp)
                 .align(Alignment.TopStart)
-                .offset(x = (-30).dp, y = 15.dp)
+                .offset(x = (-40).dp, y = (-5).dp)
                 .rotate(-10f)
         )
 
@@ -79,9 +79,9 @@ fun SplashScreenContent() {
             painter = painterResource(id = R.drawable.darkblue),
             contentDescription = "Dark Blue Shape",
             modifier = Modifier
-                .size(140.dp)
+                .size(125.dp)
                 .align(Alignment.CenterStart)
-                .offset(x = (-50).dp, y = 0.dp)
+                .offset(x = (-50).dp, y = (-20).dp)
                 .rotate(15f)
         )
 
@@ -91,7 +91,7 @@ fun SplashScreenContent() {
             modifier = Modifier
                 .size(130.dp)
                 .align(Alignment.TopEnd)
-                .offset(x = 20.dp, y = 60.dp)
+                .offset(x = 35.dp, y = 180.dp)
                 .rotate(-8f)
         )
 
@@ -101,7 +101,7 @@ fun SplashScreenContent() {
             modifier = Modifier
                 .size(125.dp)
                 .align(Alignment.CenterEnd)
-                .offset(x = 40.dp, y = 60.dp)
+                .offset(x = 40.dp, y = 130.dp)
                 .rotate(12f)
         )
 
@@ -111,7 +111,7 @@ fun SplashScreenContent() {
             modifier = Modifier
                 .size(145.dp)
                 .align(Alignment.BottomStart)
-                .offset(x = (-25).dp, y = (-20).dp)
+                .offset(x = (-25).dp, y = (20).dp)
                 .rotate(18f)
         )
 
