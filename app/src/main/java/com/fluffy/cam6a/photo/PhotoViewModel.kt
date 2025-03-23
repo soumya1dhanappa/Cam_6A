@@ -39,7 +39,7 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
     fun setTextureView(textureView: TextureView) {
         textureViewState = textureView
         if (cameraHelper == null) {
-            cameraHelper = CameraHelper(context, textureView)
+            cameraHelper = CameraHelper(context, textureView, fileHelper)
         }
         openCamera()
     }

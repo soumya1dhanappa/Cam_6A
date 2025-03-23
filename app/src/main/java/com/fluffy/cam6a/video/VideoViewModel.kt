@@ -6,43 +6,72 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
 import android.view.TextureView
+import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.*
 import com.fluffy.cam6a.camera.CameraHelper
 import com.fluffy.cam6a.utils.FileHelper
+import com.fluffy.cam6a.utils.PermissionHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.util.*
 
 class VideoViewModel(application: Application) : AndroidViewModel(application) {
 
     private var textureViewState: TextureView? = null
     private var cameraHelper: CameraHelper? = null
-    private val context: Context = getApplication<Application>().applicationContext
+    private val context = getApplication<Application>().applicationContext
 
-    private val fileHelper = FileHelper(context)
+    private val fileHelper = FileHelper(context) // FileHelper instance
 
-    private val _captureSuccess = MutableLiveData<Boolean>()
-    val captureSuccess: LiveData<Boolean> get() = _captureSuccess
-
-    private val _selectedVideoUri = MutableLiveData<Uri?>()
-    val selectedVideoUri: LiveData<Uri?> get() = _selectedVideoUri
+    private val _recordingSuccess = MutableLiveData(false)
+    val recordingSuccess: LiveData<Boolean> get() = _recordingSuccess
 
     private val _recentVideos = MutableLiveData<List<Uri>>()
     val recentVideos: LiveData<List<Uri>> get() = _recentVideos
 
-    // Recording state
-    private val _isRecording = MutableLiveData<Boolean>(false)
+    private val _permissionsGranted = MutableLiveData(false)
+    val permissionsGranted: LiveData<Boolean> get() = _permissionsGranted
+
+    private val _isRecording = MutableLiveData(false)
     val isRecording: LiveData<Boolean> get() = _isRecording
 
-    /** Stores the selected video URI */
-    fun setSelectedVideo(uri: Uri?) {
-        _selectedVideoUri.postValue(uri)
+    private val _recordingTime = MutableLiveData(0)
+    val recordingTime: LiveData<Int> get() = _recordingTime
+
+    private var permissionLauncher: ActivityResultLauncher<Array<String>>? = null
+    private var recordingTimer: Timer? = null
+
+    /** Sets the permission launcher */
+    fun setPermissionLauncher(launcher: ActivityResultLauncher<Array<String>>) {
+        permissionLauncher = launcher
+    }
+
+    /** Updates the permissions granted state */
+    fun updatePermissionsGranted(allGranted: Boolean) {
+        _permissionsGranted.value = allGranted
+    }
+
+    /** Checks if all required permissions are granted */
+    fun arePermissionsGranted(context: Context): Boolean {
+        return PermissionHelper(context).hasAllPermissions()
+    }
+
+    /** Requests required permissions */
+    fun requestPermissions() {
+        permissionLauncher?.launch(PermissionHelper.REQUIRED_PERMISSIONS)
+    }
+
+    /** Initializes the camera manager */
+    fun initializeCameraManager(context: Context) {
+        // Initialize camera-related components here
     }
 
     /** Initializes TextureView and CameraHelper */
-    fun setTextureView(textureView: TextureView) {
+    fun initializeTextureView(textureView: TextureView) {
         textureViewState = textureView
         if (cameraHelper == null) {
-            cameraHelper = CameraHelper(context, textureView)
+            // Pass the fileHelper instance to CameraHelper
+            cameraHelper = CameraHelper(context, textureView, fileHelper)
         }
         openCamera()
     }
@@ -55,51 +84,37 @@ class VideoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Starts video recording */
-    fun captureVideo() {
+    fun startRecording() {
+        _isRecording.value = true
+        startRecordingTimer()
         viewModelScope.launch(Dispatchers.IO) {
-            if (_isRecording.value == true) {
-                // Already recording, stop it instead
-                stopRecording()
-                return@launch
-            }
-
             try {
-                _isRecording.postValue(true)
-                val savedUri = cameraHelper?.startVideoRecording()
-                if (savedUri != null) {
-                    setSelectedVideo(savedUri)
-                    Log.d(TAG, "Started video recording: $savedUri")
+                cameraHelper?.startRecording()
+                Log.d(TAG, "Recording started")
+            } catch (e: Exception) {
+                logError("Error starting recording: ${e.message}")
+            }
+        }
+    }
+
+    /** Stops video recording and saves the video */
+    fun stopRecording() {
+        _isRecording.value = false
+        stopRecordingTimer()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val videoUri = cameraHelper?.stopRecording()
+                if (videoUri != null) {
+                    _recordingSuccess.postValue(true)
+                    Log.d(TAG, "Recording stopped and saved: $videoUri")
                 } else {
-                    logError("Failed to start video recording")
-                    _isRecording.postValue(false)
+                    _recordingSuccess.postValue(false)
+                    Log.e(TAG, "Failed to save recording")
                 }
             } catch (e: Exception) {
-                logError("Error starting video recording: ${e.localizedMessage}")
-                _isRecording.postValue(false)
+                logError("Error stopping recording: ${e.message}")
             }
         }
-    }
-
-    /** Stops video recording */
-    fun stopRecording() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                cameraHelper?.stopVideoRecording()
-                _isRecording.postValue(false)
-                _captureSuccess.postValue(true)
-                fetchRecentVideos() // Update the gallery after recording is complete
-                Log.d(TAG, "Video recording stopped successfully")
-            } catch (e: Exception) {
-                logError("Error stopping video recording: ${e.localizedMessage}")
-                _isRecording.postValue(false)
-                _captureSuccess.postValue(false)
-            }
-        }
-    }
-
-    /** Logs errors with Log.e */
-    private fun logError(message: String) {
-        Log.e(TAG, "VideoViewModel Error: $message")
     }
 
     /** Fetches recent videos from the gallery */
@@ -132,45 +147,45 @@ class VideoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Reset capture success flag */
-    fun resetCaptureSuccess() {
-        _captureSuccess.postValue(false)
+    /** Starts the recording timer */
+    private fun startRecordingTimer() {
+        recordingTimer = Timer().apply {
+            scheduleAtFixedRate(object : TimerTask() {
+                override fun run() {
+                    _recordingTime.postValue((_recordingTime.value ?: 0) + 1)
+                }
+            }, 1000, 1000) // Update every second
+        }
+    }
+
+    /** Stops the recording timer */
+    private fun stopRecordingTimer() {
+        recordingTimer?.cancel()
+        recordingTimer = null
+        _recordingTime.postValue(0)
     }
 
     /** Switches between front and back cameras */
     fun switchCamera() {
-        viewModelScope.launch(Dispatchers.Main) {
-            cameraHelper?.switchCamera() ?: logError("CameraHelper not initialized")
-        }
+        cameraHelper?.switchCamera()
     }
 
-    /** Properly implemented startVideoRecording method that was previously a TODO */
-    fun startVideoRecording() {
-        captureVideo() // Reuse the existing captureVideo method
+    /** Resets the recording success flag */
+    fun resetRecordingSuccess() {
+        _recordingSuccess.value = false
     }
 
-    /** Properly implemented stopVideoRecording method that was previously a TODO */
-    fun stopVideoRecording() {
-        stopRecording() // Reuse the existing stopRecording method
-    }
-
-    /** Clean up resources when ViewModel is cleared */
-    override fun onCleared() {
-        super.onCleared()
+    /** Releases all resources (e.g., camera) */
+    fun releaseAll() {
         cameraHelper?.closeCamera()
     }
 
-    companion object {
-        const val TAG = "VideoViewModel"
+    /** Logs errors with Log.e */
+    private fun logError(message: String) {
+        Log.e(TAG, "VideoViewModel Error: $message")
     }
-}
 
-class VideoViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(VideoViewModel::class.java)) {
-            @Suppress("UNCHECKED_CAST")
-            return VideoViewModel(application) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
+    companion object {
+        private const val TAG = "VideoViewModel"
     }
 }

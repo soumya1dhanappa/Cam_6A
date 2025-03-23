@@ -9,23 +9,23 @@ import androidx.core.content.ContextCompat
 
 class PermissionHelper(private val context: Context) {
 
-    private val requiredPermissions = mutableListOf(
-        Manifest.permission.CAMERA
-    ).apply {
-        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-            add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            add(Manifest.permission.READ_MEDIA_IMAGES)
-            add(Manifest.permission.READ_MEDIA_VIDEO)
-        }
-    }.toTypedArray()
+    companion object {
+        val REQUIRED_PERMISSIONS = mutableListOf(
+            Manifest.permission.CAMERA
+        ).apply {
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.READ_MEDIA_IMAGES)
+                add(Manifest.permission.READ_MEDIA_VIDEO)
+            }
+            add(Manifest.permission.RECORD_AUDIO) // Required for video recording
+        }.toTypedArray()
+    }
 
     fun hasCameraPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.CAMERA
-        ) == PackageManager.PERMISSION_GRANTED
+        return ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     }
 
     fun hasStoragePermission(): Boolean {
@@ -39,14 +39,18 @@ class PermissionHelper(private val context: Context) {
         }
     }
 
+    fun hasAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    }
+
     fun hasAllPermissions(): Boolean {
-        return requiredPermissions.all { permission ->
+        return REQUIRED_PERMISSIONS.all { permission ->
             ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
         }
     }
 
     fun checkAndRequestPermissions(launcher: ActivityResultLauncher<Array<String>>): Boolean {
-        val permissionsToRequest = requiredPermissions.filter { permission ->
+        val permissionsToRequest = REQUIRED_PERMISSIONS.filter { permission ->
             ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
         }.toTypedArray()
 
@@ -55,6 +59,12 @@ class PermissionHelper(private val context: Context) {
             false
         } else {
             true
+        }
+    }
+
+    fun missingPermissions(): List<String> {
+        return REQUIRED_PERMISSIONS.filter { permission ->
+            ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
         }
     }
 }

@@ -13,15 +13,17 @@ import android.media.MediaRecorder
 import android.net.Uri
 import android.os.*
 import android.util.Log
-import android.util.Size
 import android.view.Surface
 import android.view.TextureView
 import androidx.core.app.ActivityCompat
 import com.fluffy.cam6a.utils.FileHelper
-import java.io.IOException
-import java.util.*
+import java.io.File
 
-class CameraHelper(private val context: Context, private val textureView: TextureView) {
+class CameraHelper(
+    private val context: Context,
+    private val textureView: TextureView,
+    private val fileHelper: FileHelper
+) {
 
     private var cameraId: String = ""
     private var cameraDevice: CameraDevice? = null
@@ -30,12 +32,9 @@ class CameraHelper(private val context: Context, private val textureView: Textur
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
     private var backgroundThread: HandlerThread? = null
     private var backgroundHandler: Handler? = null
-
-    // Video recording components
     private var mediaRecorder: MediaRecorder? = null
     private var isRecording = false
-    private var videoFilePath: String = ""
-    private val fileHelper = FileHelper(context)
+    private var recordingFile: File? = null
 
     init {
         startBackgroundThread()
@@ -152,17 +151,87 @@ class CameraHelper(private val context: Context, private val textureView: Textur
         }
     }
 
-    /** Captures a Bitmap from Camera */
-    fun captureBitmap(): Bitmap? {
+    fun startRecording() {
+        if (isRecording) return
+
+        try {
+            recordingFile = fileHelper.createVideoFile() // Get the File object
+            mediaRecorder = MediaRecorder().apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setVideoSource(MediaRecorder.VideoSource.SURFACE)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setOutputFile(recordingFile!!.absolutePath) // Use the absolute file path
+                setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setVideoSize(textureView.width, textureView.height)
+                setVideoFrameRate(30)
+                setOrientationHint(90)
+                prepare()
+            }
+
+            val previewSurface = Surface(textureView.surfaceTexture)
+            val recorderSurface = mediaRecorder!!.surface
+
+            cameraDevice?.createCaptureSession(
+                listOf(previewSurface, recorderSurface),
+                object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(session: CameraCaptureSession) {
+                        captureSession = session
+                        val recordRequest = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                            addTarget(previewSurface)
+                            addTarget(recorderSurface)
+                        }.build()
+
+                        session.setRepeatingRequest(recordRequest, null, backgroundHandler)
+                        mediaRecorder?.start()
+                        isRecording = true
+                        Log.d(TAG, "Recording started")
+                    }
+
+                    override fun onConfigureFailed(session: CameraCaptureSession) {
+                        Log.e(TAG, "Failed to configure recording session")
+                    }
+                },
+                backgroundHandler // Pass backgroundHandler here
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting recording: ${e.message}")
+        }
+    }
+
+    fun stopRecording(): Uri? {
         return try {
-            if (!textureView.isAvailable) {
-                Log.e(TAG, "TextureView is not available")
-                null
+            if (isRecording) {
+                isRecording = false
+                mediaRecorder?.apply {
+                    stop()
+                    reset()
+                    release()
+                }
+                mediaRecorder = null
+
+                // Log the file path and notify MediaScanner
+                recordingFile?.let { file ->
+                    Log.d(TAG, "Video saved to: ${file.absolutePath}")
+                    fileHelper.notifyMediaScanner(file)
+                }
+
+                Uri.fromFile(recordingFile)
             } else {
-                textureView.bitmap
+                Log.e(TAG, "Recording was not in progress")
+                null
             }
         } catch (e: Exception) {
-            Log.e(TAG, " Error capturing bitmap: ${e.localizedMessage}")
+            Log.e(TAG, "Error stopping recording: ${e.message}")
+            null
+        }
+    }
+
+    fun captureBitmap(): Bitmap? {
+        return if (textureView.isAvailable) {
+            textureView.bitmap
+        } else {
+            Log.e(TAG, "TextureView is not available")
             null
         }
     }
@@ -175,149 +244,14 @@ class CameraHelper(private val context: Context, private val textureView: Textur
         captureSession = null
         imageReader?.close()
         imageReader = null
+        mediaRecorder?.release()
+        mediaRecorder = null
     }
 
     fun switchCamera() {
         cameraId = if (cameraId == getBackCameraId()) getFrontCameraId() else getBackCameraId()
         closeCamera()
         openCamera()
-    }
-
-    /** Sets up MediaRecorder for video capture */
-    private fun setupMediaRecorder(): MediaRecorder {
-        val rotation = 0 // You might want to get this from the display rotation
-
-        return MediaRecorder().apply {
-            setAudioSource(MediaRecorder.AudioSource.MIC)
-            setVideoSource(MediaRecorder.VideoSource.SURFACE)
-            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-
-            // Create a new file for the video
-            videoFilePath = fileHelper.createVideoFile().absolutePath
-            setOutputFile(videoFilePath)
-
-            setVideoEncodingBitRate(10_000_000)
-            setVideoFrameRate(30)
-
-            // Get optimal video size
-            val videoSize = getOptimalVideoSize()
-            setVideoSize(videoSize.width, videoSize.height)
-
-            setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setOrientationHint(rotation)
-
-            try {
-                prepare()
-            } catch (e: IOException) {
-                Log.e(TAG, "Error preparing MediaRecorder: ${e.message}")
-                throw e
-            }
-        }
-    }
-
-    /** Gets optimal video size based on camera characteristics */
-    private fun getOptimalVideoSize(): Size {
-        val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-        val streamConfigMap = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-
-        // Get available sizes for MediaRecorder output
-        val videoSizes = streamConfigMap?.getOutputSizes(MediaRecorder::class.java) ?: arrayOf()
-
-        // Default to 1080p or the highest available resolution below that
-        val targetResolution = Size(1920, 1080)
-
-        return if (videoSizes.isNotEmpty()) {
-            // Find size that is closest to 1080p without exceeding it
-            videoSizes.filter { it.height <= targetResolution.height && it.width <= targetResolution.width }
-                .maxByOrNull { it.width * it.height } ?: videoSizes[0]
-        } else {
-            Size(1280, 720) // Fallback to 720p
-        }
-    }
-
-    /** Starts video recording and returns the URI of the saved file */
-    fun startVideoRecording(): Uri? {
-        if (isRecording) {
-            Log.w(TAG, "Already recording")
-            return null
-        }
-
-        try {
-            // Close any existing preview session
-            captureSession?.close()
-            captureSession = null
-
-            // Initialize MediaRecorder
-            mediaRecorder = setupMediaRecorder()
-
-            // Create surfaces for both preview and recording
-            val surfaceTexture = textureView.surfaceTexture ?: return null
-            surfaceTexture.setDefaultBufferSize(textureView.width, textureView.height)
-            val previewSurface = Surface(surfaceTexture)
-            val recorderSurface = mediaRecorder!!.surface
-
-            // Set up a new capture session with both surfaces
-            val surfaces = listOf(previewSurface, recorderSurface)
-
-            // Create capture request for video recording
-            val captureRequestBuilder = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
-            captureRequestBuilder?.addTarget(previewSurface)
-            captureRequestBuilder?.addTarget(recorderSurface)
-
-            cameraDevice?.createCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
-                override fun onConfigured(session: CameraCaptureSession) {
-                    captureSession = session
-                    captureRequestBuilder?.build()?.let {
-                        captureSession?.setRepeatingRequest(it, null, backgroundHandler)
-
-                        // Start recording
-                        mediaRecorder?.start()
-                        isRecording = true
-                        Log.d(TAG, "Started recording to $videoFilePath")
-                    }
-                }
-
-                override fun onConfigureFailed(session: CameraCaptureSession) {
-                    Log.e(TAG, "Failed to configure capture session for video recording")
-                }
-            }, backgroundHandler)
-
-            // Return the URI for the video file
-            return Uri.parse("file://$videoFilePath")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error starting video recording: ${e.message}")
-            releaseMediaRecorder()
-            return null
-        }
-    }
-
-    /** Stops video recording */
-    fun stopVideoRecording() {
-        if (!isRecording) {
-            Log.w(TAG, "Not recording")
-            return
-        }
-
-        try {
-            // Stop recording
-            mediaRecorder?.stop()
-            Log.d(TAG, "Stopped recording")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping recording: ${e.message}")
-        } finally {
-            releaseMediaRecorder()
-            // Restart the preview
-            startCameraSession()
-        }
-    }
-
-    /** Releases MediaRecorder resources */
-    private fun releaseMediaRecorder() {
-        mediaRecorder?.reset()
-        mediaRecorder?.release()
-        mediaRecorder = null
-        isRecording = false
     }
 
     companion object {

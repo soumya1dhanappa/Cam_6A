@@ -60,6 +60,11 @@ dependencies {
     implementation(libs.androidx.media3.common.ktx)
     implementation(libs.androidx.exifinterface)
     implementation(libs.androidx.runtime.livedata)
+    implementation(libs.androidx.runner)
+    implementation(libs.androidx.espresso.core)
+    implementation(libs.androidx.media3.ui)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.benchmark.macro)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
@@ -95,4 +100,46 @@ dependencies {
     implementation("com.github.bumptech.glide:glide:4.15.1")
     implementation("com.github.bumptech.glide:okhttp3-integration:4.15.1")
     kapt("com.github.bumptech.glide:compiler:4.15.1")
+
+    implementation ("androidx.camera:camera-core:1.3.1")
+    implementation ("androidx.camera:camera-camera2:1.3.1")
+    implementation ("androidx.camera:camera-lifecycle:1.3.1")
+    implementation ("androidx.camera:camera-video:1.3.1")
+    implementation ("androidx.camera:camera-view:1.3.1")
+
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.ui.tooling.preview)
+    implementation(libs.androidx.material3)
+
+    // ✅ Camera2 API (For advanced video recording)
+//    implementation(libs.androidx.camera.camera2.v141)
+
+
+
+
+    // ✅ ExoPlayer (For Video Playback)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
+
+    // Coil for Image Loading
+    implementation(libs.coil.compose)
+    implementation(libs.androidx.espresso.core)
+
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.ui.test.junit4)
+    debugImplementation(libs.androidx.ui.tooling)
+    debugImplementation(libs.androidx.ui.test.manifest)
+
+    implementation ("androidx.compose.runtime:runtime-livedata:1.3.0")
+
+     // Or the latest version
+    implementation ("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7") // Or the latest version
 }
