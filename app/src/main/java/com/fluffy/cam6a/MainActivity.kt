@@ -63,6 +63,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
     override fun onResume() {
         super.onResume()
         // Re-initialize the camera when the activity resumes
