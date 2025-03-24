@@ -9,9 +9,12 @@ import android.util.Log
 import android.view.TextureView
 import androidx.lifecycle.*
 import com.fluffy.cam6a.camera.CameraHelper
+import com.fluffy.cam6a.filters.FiltersViewModel
 import com.fluffy.cam6a.utils.FileHelper
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
 
 class PhotoViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -30,6 +33,9 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
     private val _recentImages = MutableLiveData<List<Uri>>()
     val recentImages: LiveData<List<Uri>> get() = _recentImages
 
+    private val _zoomLevel = MutableLiveData(1.0f) // Default zoom level
+    val zoomLevel: LiveData<Float> = _zoomLevel
+
     /** Stores the selected image URI */
     fun setSelectedImage(uri: Uri?) {
         _selectedImageUri.postValue(uri)
@@ -47,12 +53,15 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
     /** Opens the camera */
     fun openCamera() {
         viewModelScope.launch(Dispatchers.Main) {
-            cameraHelper?.openCamera() ?: logError("CameraHelper not initialized")
+            cameraHelper?.openCamera()
+            delay(500) // ✅ Small delay to allow camera to initialize
+            cameraHelper?.applyZoomToCamera(_zoomLevel.value ?: 1.0f) // ✅ Apply zoom after opening camera
         }
     }
 
+
     /** Captures an image and saves it */
-    fun captureImage() {
+    fun captureImage(filtersViewModel: FiltersViewModel) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val bitmap: Bitmap? = cameraHelper?.captureBitmap()
@@ -62,14 +71,18 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                val savedUri = fileHelper.saveImageToGallery(bitmap) //  Call FileHelper method
+                // Apply the selected filter from FiltersViewModel
+                val filteredBitmap = filtersViewModel.applySelectedFilter(bitmap)
+
+                val savedUri =
+                    fileHelper.saveImageToGallery(filteredBitmap) // Save the filtered image
                 if (savedUri != null) {
                     setSelectedImage(savedUri)
                     _captureSuccess.postValue(true)
-                    Log.d(TAG, "Image saved successfully: $savedUri")
+                    Log.d(TAG, "Filtered image saved successfully: $savedUri")
 
                     // Refresh recent images after saving
-                    fetchRecentImages()
+
                 } else {
                     logError("Failed to save image")
                     _captureSuccess.postValue(false)
@@ -87,34 +100,7 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Fetches recent images from the gallery */
-    fun fetchRecentImages() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val imagesList = mutableListOf<Uri>()
-                val projection = arrayOf(MediaStore.Images.Media._ID)
-                val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC LIMIT 5"
 
-                val query = context.contentResolver.query(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    projection, null, null, sortOrder
-                )
-
-                query?.use { cursor ->
-                    val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-                    while (cursor.moveToNext()) {
-                        val id = cursor.getLong(idColumn)
-                        val uri = Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id.toString())
-                        imagesList.add(uri)
-                    }
-                }
-
-                _recentImages.postValue(imagesList)
-                Log.d(TAG, " Fetched ${imagesList.size} recent images")
-            } catch (e: Exception) {
-                logError("Error fetching recent images: ${e.localizedMessage}")
-            }
-        }
-    }
 
     /**  Reset capture success flag */
     fun resetCaptureSuccess() {
@@ -127,6 +113,24 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
             cameraHelper?.switchCamera() ?: logError("CameraHelper not initialized")
         }
     }
+
+
+    fun setZoom(scaleFactor: Float) {
+        val currentZoom = _zoomLevel.value ?: 1.0f
+        val newZoom = (currentZoom * scaleFactor).coerceIn(1.0f, 5.0f) // Prevent over-zooming
+
+        viewModelScope.launch(Dispatchers.Main) {
+            if (cameraHelper?.cameraDevice == null) { // ✅ Check if camera is open
+                logError("Cannot apply zoom: Camera is not open")
+                return@launch
+            }
+
+            _zoomLevel.postValue(newZoom)
+            cameraHelper?.applyZoomToCamera(newZoom) // ✅ Ensure zoom is applied only when camera is open
+        }
+    }
+
+
 
     companion object {
         const val TAG = "PhotoViewModel"

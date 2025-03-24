@@ -31,29 +31,29 @@ import coil.compose.AsyncImage
 import com.fluffy.cam6a.photo.PhotoViewModel
 import com.fluffy.cam6a.photo.PhotoViewModelFactory
 import com.fluffy.cam6a.ui.components.CameraPreview
+import com.fluffy.cam6a.ui.components.FilterBar
+import com.fluffy.cam6a.filters.FiltersViewModel
+import com.fluffy.cam6a.camera.CameraHelper
+import com.fluffy.cam6a.filters.FiltersViewModelFactory
 
 @Composable
-fun PhotoScreen(navController: NavController) {
+fun PhotoScreen(navController: NavController,cameraHelper: CameraHelper) { // ✅ Pass CameraHelper
     val context = LocalContext.current.applicationContext as Application
     val photoViewModel: PhotoViewModel = viewModel(factory = PhotoViewModelFactory(context))
+    val filtersViewModel: FiltersViewModel = viewModel(factory = FiltersViewModelFactory(cameraHelper))
+
 
     val captureSuccess by photoViewModel.captureSuccess.observeAsState(initial = false)
     val recentImages by photoViewModel.recentImages.observeAsState(initial = emptyList())
 
-    // Fetch recent images when screen loads
-    LaunchedEffect(Unit) {
-        photoViewModel.fetchRecentImages()
-    }
 
-    // ActivityResultLauncher for opening gallery
+
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val imageUri = result.data?.data
-            // Handle the selected image URI if needed
             imageUri?.let {
-                // You can pass the selected image URI to your ViewModel or handle it as needed
                 Toast.makeText(context, "Image Selected: $it", Toast.LENGTH_SHORT).show()
             }
         }
@@ -64,29 +64,29 @@ fun PhotoScreen(navController: NavController) {
             .fillMaxSize()
             .background(Color(0xFFA5AFF3))
     ) {
-        // Camera Preview Section
+        FilterBar(filtersViewModel, cameraHelper ) // ✅ Pass CameraHelper
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(16.dp)
+                .padding(1.dp)
         ) {
-            CameraPreview(modifier = Modifier.fillMaxSize(), photoViewModel)
+            CameraPreview(
+                modifier = Modifier.fillMaxSize(),
+                photoViewModel = photoViewModel,
+                filtersViewModel = filtersViewModel
+            )
         }
 
-        // Recent Images Row (Displays last 5 clicked images)
         RecentImagesRow(recentImages)
 
-        // Bottom UI (Gallery, Capture, Switch Camera)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceAround
         ) {
-            // Gallery Button (Opens Recent Images)
             IconButton(onClick = {
-                // Create an Intent to open the gallery
                 val intent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                 intent.type = "image/*"
                 galleryLauncher.launch(intent)
@@ -94,12 +94,10 @@ fun PhotoScreen(navController: NavController) {
                 Icon(imageVector = Icons.Default.Collections, contentDescription = "Gallery", tint = Color.White)
             }
 
-            // Capture Button
-            Button(onClick = { photoViewModel.captureImage() }, modifier = Modifier.size(72.dp)) {
+            Button(onClick = { photoViewModel.captureImage(filtersViewModel) }, modifier = Modifier.size(72.dp)) {
                 Icon(imageVector = Icons.Default.CameraAlt, contentDescription = "Capture", tint = Color.Black)
             }
 
-            // Switch Camera Button
             IconButton(onClick = { photoViewModel.switchCamera() }) {
                 Icon(imageVector = Icons.Default.SwitchCamera, contentDescription = "Switch Camera", tint = Color.White)
             }
@@ -112,7 +110,6 @@ fun PhotoScreen(navController: NavController) {
     }
 }
 
-/** Displays recent images in a horizontal row */
 @Composable
 fun RecentImagesRow(images: List<Uri>) {
     if (images.isNotEmpty()) {
@@ -135,7 +132,6 @@ fun RecentImagesRow(images: List<Uri>) {
             }
         }
     } else {
-        // Wrap Text inside Box to use align
         Box(
             modifier = Modifier
                 .fillMaxWidth()

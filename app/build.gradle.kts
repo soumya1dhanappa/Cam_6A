@@ -63,6 +63,16 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
+    //navigation
+    implementation("androidx.navigation:navigation-compose:2.7.2")
+    //to import svg fils
+    implementation ("androidx.compose.material:material-icons-extended:1.5.0")
+    implementation ("androidx.compose.material:material:1.5.0") // Use the latest version
+    implementation ("androidx.compose.material:material-icons-extended:1.5.0")
+    //to import svg fils
+    implementation ("androidx.compose.material:material-icons-extended:1.5.0")
+    implementation ("androidx.compose.material:material:1.5.0") // Use the latest version
+    implementation ("androidx.compose.material:material-icons-extended:1.5.0")
     implementation(libs.androidx.navigation.compose)
 
     // Jetpack Compose
@@ -84,10 +94,12 @@ dependencies {
         // Accompanist (For Permission Handling)
         implementation(libs.accompanist.permissions)
 
+
+
         // Coil (For image loading)
         implementation(libs.coil.compose)
-
-         implementation(libs.androidx.material.icons.extended)
+    implementation("io.coil-kt:coil-compose:2.5.0")
+    implementation(libs.androidx.material.icons.extended)
 
 
 }

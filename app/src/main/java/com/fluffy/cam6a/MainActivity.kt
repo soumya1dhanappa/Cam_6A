@@ -2,6 +2,7 @@ package com.fluffy.cam6a
 
 import PhotoScreen
 import android.os.Bundle
+import android.view.TextureView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,13 +21,18 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.fluffy.cam6a.camera.CameraHelper
 import com.fluffy.cam6a.ui.theme.Cam6ATheme
 import com.fluffy.cam6a.ui.SplashScreen
 import com.fluffy.cam6a.utils.PermissionHelper
-import com.fluffy.cam6a.video.VideoScreen
+//import com.fluffy.cam6a.video.VideoScreen
 
 class MainActivity : ComponentActivity() {
     private lateinit var permissionHelper: PermissionHelper
+    private lateinit var textureView: TextureView
+    private lateinit var cameraHelper: CameraHelper
+
+
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -60,10 +66,11 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppNavigation(navController: NavHostController, context: ComponentActivity) {
+    val cameraHelper = remember { CameraHelper(context, TextureView(context)) }
     NavHost(navController = navController, startDestination = "mainScreen") {
         composable("mainScreen") { MainScreen(navController) }
-        composable("photoScreen") { PhotoScreen(navController) }
-        composable("videoScreen") { VideoScreen() }
+        composable("photoScreen") {  PhotoScreen(navController, cameraHelper ) }
+//        composable("videoScreen") { VideoScreen() }
     }
 }
 
@@ -100,3 +107,4 @@ fun MainScreen(navController: NavController) {
         }
     }
 }
+
