@@ -1,105 +1,54 @@
 package com.fluffy.cam6a.filters
 
+import android.app.Application
 import android.graphics.Bitmap
 import android.util.Log
-import androidx.lifecycle.*
-import com.fluffy.cam6a.camera.CameraHelper
-import com.fluffy.cam6a.photo.PhotoViewModel.Companion.TAG
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.update
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import com.fluffy.cam6a.ui.components.FilterType
+class FiltersViewModel(application: Application) : AndroidViewModel(application) {
+    // Current filter type and function
+    private val _currentFilterType = MutableLiveData<FilterType>(FilterType.NONE)
+    val currentFilterType: LiveData<FilterType> = _currentFilterType
 
-class FiltersViewModel(private val cameraHelper: CameraHelper) : ViewModel() {
+    private val _currentFilterFunction = MutableLiveData<(Bitmap) -> Bitmap>({ it })
+    val currentFilterFunction: LiveData<(Bitmap) -> Bitmap> = _currentFilterFunction
 
-    private val _originalImage = MutableStateFlow<Bitmap?>(null)
-    val originalImage: StateFlow<Bitmap?> = _originalImage
-
-    private val _filteredImage = MutableStateFlow<Bitmap?>(null)
-    val filteredImage: StateFlow<Bitmap?> = _filteredImage
-
-    private val _flashState = MutableStateFlow(false)
-    val flashState: StateFlow<Boolean> = _flashState
-
-    private val _selectedFilter = MutableStateFlow<(Bitmap) -> Bitmap> { it }
-    val selectedFilter: StateFlow<(Bitmap) -> Bitmap> = _selectedFilter
-
-    private val _exposureLevel = MutableStateFlow(1.0f)
-    val exposureLevel: StateFlow<Float> = _exposureLevel
-
-    private val _selectedFilterName = MutableStateFlow("Normal")
-    val selectedFilterName: StateFlow<String> = _selectedFilterName
-
+    // Camera controls
     private val _zoomLevel = MutableLiveData(1.0f)
     val zoomLevel: LiveData<Float> = _zoomLevel
 
-    fun setOriginalImage(bitmap: Bitmap) {
-        _originalImage.value = bitmap
-        _filteredImage.value = applyCurrentFilter(bitmap)
-    }
+    private val _exposureLevel = MutableLiveData(1.0f)
+    val exposureLevel: LiveData<Float> = _exposureLevel
 
-    fun applySelectedFilter(bitmap: Bitmap): Bitmap {
-        return _selectedFilter.value.invoke(bitmap)
-    }
-
-    private fun applyCurrentFilter(bitmap: Bitmap): Bitmap {
-        return _selectedFilter.value(bitmap)
-    }
-
-    fun setFilter(filter: (Bitmap) -> Bitmap, filterName: String) {
-        _selectedFilter.value = filter
-        _selectedFilterName.value = filterName
-        _originalImage.value?.let {
-            _filteredImage.value = applyCurrentFilter(it)
+    // Filter application
+    fun setFilter(filterFunction: (Bitmap) -> Bitmap, filterName: String) {
+        val type = when (filterName) {
+            "Normal" -> FilterType.NONE
+            "Grayscale" -> FilterType.GRAYSCALE
+            "Sepia" -> FilterType.SEPIA
+            "Eclipse" -> FilterType.ECLIPSE
+            else -> FilterType.NONE
         }
+        _currentFilterType.value = type
+        _currentFilterFunction.value = filterFunction
+        Log.d("FiltersViewModel", "Filter set to: $filterName")
     }
 
-    fun toggleFlash() {
-        _flashState.update { !it }
+    fun applyFilterToBitmap(bitmap: Bitmap): Bitmap {
+        return _currentFilterFunction.value?.invoke(bitmap) ?: bitmap
     }
 
-    private val _currentBitmap = MutableLiveData<Bitmap?>()
-    val currentBitmap: LiveData<Bitmap?> get() = _currentBitmap
-
-    fun adjustZoom(increase: Boolean) {
-        val currentZoom = _zoomLevel.value ?: 1.0f
-        val newZoom = if (increase) {
-            (currentZoom + 0.5f).coerceIn(1.0f, 5.0f) // Max zoom 5.0x
-        } else {
-            (currentZoom - 0.5f).coerceIn(1.0f, 5.0f) // Min zoom 1.0x
+    // Camera controls
+    fun adjustZoom(zoomIn: Boolean) {
+        _zoomLevel.value = (_zoomLevel.value ?: 1.0f).let {
+            if (zoomIn) (it + 0.5f).coerceAtMost(5.0f)
+            else (it - 0.5f).coerceAtLeast(1.0f)
         }
-        _zoomLevel.value = newZoom
-
-        cameraHelper?.let {
-            if (it.cameraDevice != null) { // Ensure camera is open before applying zoom
-                Log.d(TAG, "Applying Zoom: $newZoom on Camera ID: ${it.cameraId}")
-                it.applyZoomToCamera(newZoom)
-            } else {
-                Log.e(TAG, "Cannot apply zoom: Camera is not open")
-            }
-        }
-    }
-
-
-
-    fun setBitmap(bitmap: Bitmap) {
-        _currentBitmap.postValue(bitmap)
     }
 
     fun adjustExposure(level: Float) {
         _exposureLevel.value = level.coerceIn(0.5f, 2.0f)
-    }
-
-    private fun applyZoom(bitmap: Bitmap, zoomFactor: Float): Bitmap {
-        return bitmap
-    }
-}
-
-class FiltersViewModelFactory(private val cameraHelper: CameraHelper) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(FiltersViewModel::class.java)) {
-            @Suppress("UNCHECKED_CAST")
-            return FiltersViewModel(cameraHelper) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
     }
 }

@@ -1,6 +1,6 @@
 package com.fluffy.cam6a.photo
-import android.app.Application
 
+import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
@@ -10,19 +10,19 @@ import android.view.TextureView
 import androidx.lifecycle.*
 import com.fluffy.cam6a.camera.CameraHelper
 import com.fluffy.cam6a.filters.FiltersViewModel
+import com.fluffy.cam6a.ui.components.FilterType
 import com.fluffy.cam6a.utils.FileHelper
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-
+import kotlinx.coroutines.*
 
 class PhotoViewModel(application: Application) : AndroidViewModel(application) {
 
     private var textureViewState: TextureView? = null
-    private var cameraHelper: CameraHelper? = null
+    var cameraHelper: CameraHelper? = null
     private val context: Context = getApplication<Application>().applicationContext
 
-    private val fileHelper = FileHelper(context) // Initialize FileHelper
+    private val fileHelper = FileHelper(context)
+
+
 
     private val _captureSuccess = MutableLiveData<Boolean>()
     val captureSuccess: LiveData<Boolean> get() = _captureSuccess
@@ -33,12 +33,21 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
     private val _recentImages = MutableLiveData<List<Uri>>()
     val recentImages: LiveData<List<Uri>> get() = _recentImages
 
-    private val _zoomLevel = MutableLiveData(1.0f) // Default zoom level
-    val zoomLevel: LiveData<Float> = _zoomLevel
+    private val _selectedFilter = MutableLiveData<FilterType>().apply { value = FilterType.NONE }
+    val selectedFilter: LiveData<FilterType> get() = _selectedFilter
+
+    private val _filteredBitmap = MutableLiveData<Bitmap?>()
+    val filteredBitmap: LiveData<Bitmap?> = _filteredBitmap
+    private var originalBitmap: Bitmap? = null
 
     /** Stores the selected image URI */
     fun setSelectedImage(uri: Uri?) {
         _selectedImageUri.postValue(uri)
+    }
+
+    /** Updates the selected filter */
+    fun setFilter(filterType: FilterType) {
+        _selectedFilter.postValue(filterType)
     }
 
     /** Initializes TextureView and CameraHelper */
@@ -53,14 +62,11 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
     /** Opens the camera */
     fun openCamera() {
         viewModelScope.launch(Dispatchers.Main) {
-            cameraHelper?.openCamera()
-            delay(500) // ✅ Small delay to allow camera to initialize
-            cameraHelper?.applyZoomToCamera(_zoomLevel.value ?: 1.0f) // ✅ Apply zoom after opening camera
+            cameraHelper?.openCamera() ?: logError("CameraHelper not initialized")
         }
     }
 
-
-    /** Captures an image and saves it */
+    /** Captures an image with the applied filter and saves it */
     fun captureImage(filtersViewModel: FiltersViewModel) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -72,17 +78,16 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 // Apply the selected filter from FiltersViewModel
-                val filteredBitmap = filtersViewModel.applySelectedFilter(bitmap)
+                val filteredBitmap = filtersViewModel.applyFilterToBitmap(bitmap)
 
-                val savedUri =
-                    fileHelper.saveImageToGallery(filteredBitmap) // Save the filtered image
+                val savedUri = fileHelper.saveImageToGallery(filteredBitmap) // Save the filtered image
                 if (savedUri != null) {
                     setSelectedImage(savedUri)
                     _captureSuccess.postValue(true)
                     Log.d(TAG, "Filtered image saved successfully: $savedUri")
 
                     // Refresh recent images after saving
-
+                    fetchRecentImages()
                 } else {
                     logError("Failed to save image")
                     _captureSuccess.postValue(false)
@@ -94,48 +99,56 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Logs errors with Log.e */
     private fun logError(message: String) {
         Log.e(TAG, "PhotoViewModel Error: $message")
     }
 
     /** Fetches recent images from the gallery */
+    fun fetchRecentImages() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val imagesList = mutableListOf<Uri>()
+                val projection = arrayOf(MediaStore.Images.Media._ID)
 
+                val query = context.contentResolver.query(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    projection, null, null, "${MediaStore.Images.Media.DATE_ADDED} DESC"
+                )
 
-    /**  Reset capture success flag */
+                query?.use { cursor ->
+                    val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getLong(idColumn)
+                        val uri = Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id.toString())
+                        imagesList.add(uri)
+                    }
+                }
+
+                _recentImages.postValue(imagesList.take(5)) // Fetches only the latest 5 images
+                Log.d(TAG, "Fetched ${imagesList.size} recent images")
+            } catch (e: Exception) {
+                logError("Error fetching recent images: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    /** Resets capture success flag */
     fun resetCaptureSuccess() {
         _captureSuccess.postValue(false)
     }
 
-    /**  Switches between front and back cameras */
+    /** Switches between front and back cameras */
     fun switchCamera() {
         viewModelScope.launch(Dispatchers.Main) {
             cameraHelper?.switchCamera() ?: logError("CameraHelper not initialized")
         }
     }
 
-
-    fun setZoom(scaleFactor: Float) {
-        val currentZoom = _zoomLevel.value ?: 1.0f
-        val newZoom = (currentZoom * scaleFactor).coerceIn(1.0f, 5.0f) // Prevent over-zooming
-
-        viewModelScope.launch(Dispatchers.Main) {
-            if (cameraHelper?.cameraDevice == null) { // ✅ Check if camera is open
-                logError("Cannot apply zoom: Camera is not open")
-                return@launch
-            }
-
-            _zoomLevel.postValue(newZoom)
-            cameraHelper?.applyZoomToCamera(newZoom) // ✅ Ensure zoom is applied only when camera is open
-        }
-    }
-
-
-
     companion object {
         const val TAG = "PhotoViewModel"
     }
 }
+
 class PhotoViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(PhotoViewModel::class.java)) {

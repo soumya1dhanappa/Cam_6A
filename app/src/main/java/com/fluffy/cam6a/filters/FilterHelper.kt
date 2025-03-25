@@ -1,4 +1,5 @@
 package com.fluffy.cam6a.filters
+
 import android.graphics.*
 
 fun applyGrayscaleFilter(original: Bitmap): Bitmap {
@@ -52,20 +53,4 @@ fun adjustBrightness(original: Bitmap, factor: Float): Bitmap {
     paint.colorFilter = ColorMatrixColorFilter(colorMatrix)
     canvas.drawBitmap(original, 0f, 0f, paint)
     return brightnessBitmap
-}
-
-fun applyZoom(original: Bitmap, zoomFactor: Float): Bitmap {
-    if (zoomFactor <= 1.0f) return original
-
-    val width = original.width
-    val height = original.height
-
-    val safeZoomFactor = zoomFactor.coerceIn(1.0f, 5.0f) // Limit zoom range
-
-    val newWidth = (width / safeZoomFactor).toInt().coerceAtLeast(1)
-    val newHeight = (height / safeZoomFactor).toInt().coerceAtLeast(1)
-    val startX = ((width - newWidth) / 2).coerceAtLeast(0)
-    val startY = ((height - newHeight) / 2).coerceAtLeast(0)
-
-    return Bitmap.createBitmap(original, startX, startY, newWidth, newHeight)
 }

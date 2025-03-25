@@ -2,8 +2,7 @@ package com.fluffy.cam6a.ui.components
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.view.ScaleGestureDetector
+import android.graphics.SurfaceTexture
 import android.view.TextureView
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -12,43 +11,46 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.fluffy.cam6a.filters.FiltersViewModel
 import com.fluffy.cam6a.photo.PhotoViewModel
-import com.fluffy.cam6a.photo.PhotoViewModelFactory
-
-
 @Composable
-fun CameraPreview(modifier: Modifier = Modifier,
-                  photoViewModel: PhotoViewModel,
-                  filtersViewModel: FiltersViewModel // Pass FiltersViewModel to CameraPreview
-){
+fun CameraPreview(
+    modifier: Modifier = Modifier,
+    photoViewModel: PhotoViewModel,
+    filtersViewModel: FiltersViewModel
+) {
     val context = LocalContext.current
-    val updatedViewModel by rememberUpdatedState(photoViewModel)  // Ensures latest ViewModel is used
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val updatedViewModel by rememberUpdatedState(photoViewModel)
+    val selectedFilter by filtersViewModel.currentFilterFunction.observeAsState()
 
-    val selectedFilter by filtersViewModel.selectedFilter.collectAsState()
-
-    val scaleGestureDetector = remember {
-        ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean {
-
-                photoViewModel.setZoom(detector.scaleFactor)// ✅ Uses ViewModel zoom method // ✅ Apply zoom using ViewModel
-                return true
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                updatedViewModel.openCamera()
             }
-        })
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
     AndroidView(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFFDEE1FA)) // Light blue background
-            .padding(8.dp)
-            .clip(RoundedCornerShape(16.dp)), // Rounded corners for camera preview
+            .background(Color(0xFFDEE1FA))
+            .padding(2.dp)
+            .clip(RoundedCornerShape(16.dp)),
         factory = { ctx ->
             FrameLayout(ctx).apply {
                 val textureView = TextureView(ctx).apply {
@@ -56,10 +58,6 @@ fun CameraPreview(modifier: Modifier = Modifier,
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
-                }
-                setOnTouchListener { _, event ->
-                    scaleGestureDetector.onTouchEvent(event)
-                    true
                 }
 
                 val imageView = ImageView(ctx).apply {
@@ -91,21 +89,24 @@ fun CameraPreview(modifier: Modifier = Modifier,
                         height: Int
                     ) {}
 
-                    override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean =
-                        true
+                    override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
+                        return true
+                    }
 
                     override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {
                         textureView.bitmap?.let { originalBitmap ->
-                            val filteredBitmap = selectedFilter(originalBitmap) // ✅ Apply filter
-                            imageView.post { imageView.setImageBitmap(filteredBitmap) } // ✅ Update ImageView
+                            val filteredBitmap = selectedFilter?.invoke(originalBitmap) ?: originalBitmap
+                            imageView.post { imageView.setImageBitmap(filteredBitmap) }
                         }
                     }
                 }
 
-                // ✅ Ensure textureView and imageView are not null before adding
                 addView(textureView)
                 addView(imageView)
             }
+        },
+        update = { frameLayout ->
+            // Update logic if needed
         }
     )
 }

@@ -1,8 +1,6 @@
 package com.fluffy.cam6a
 
-import PhotoScreen
 import android.os.Bundle
-import android.view.TextureView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,23 +14,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import com.fluffy.cam6a.camera.CameraHelper
 import com.fluffy.cam6a.ui.theme.Cam6ATheme
 import com.fluffy.cam6a.ui.SplashScreen
 import com.fluffy.cam6a.utils.PermissionHelper
-//import com.fluffy.cam6a.video.VideoScreen
+import com.fluffy.cam6a.photo.PhotoScreen  // FIXED IMPORT
+import com.fluffy.cam6a.video.VideoScreen  // FIXED IMPORT
+import com.fluffy.cam6a.filters.FiltersViewModel  // Added import for ViewModel
+import com.fluffy.cam6a.photo.PhotoViewModel
+import com.fluffy.cam6a.photo.PhotoViewModelFactory
 
 class MainActivity : ComponentActivity() {
     private lateinit var permissionHelper: PermissionHelper
-    private lateinit var textureView: TextureView
-    private lateinit var cameraHelper: CameraHelper
-
-
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -66,11 +64,22 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppNavigation(navController: NavHostController, context: ComponentActivity) {
-    val cameraHelper = remember { CameraHelper(context, TextureView(context)) }
+    val filtersViewModel: FiltersViewModel = viewModel()
+    val photoViewModel: PhotoViewModel = viewModel(
+        factory = PhotoViewModelFactory(context.application)
+    )
+
     NavHost(navController = navController, startDestination = "mainScreen") {
         composable("mainScreen") { MainScreen(navController) }
-        composable("photoScreen") {  PhotoScreen(navController, cameraHelper ) }
-//        composable("videoScreen") { VideoScreen() }
+        composable("photoScreen") {
+            PhotoScreen(
+                navController = navController,
+                filtersViewModel = filtersViewModel,
+                photoViewModel = photoViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("videoScreen") { VideoScreen() }
     }
 }
 
@@ -92,7 +101,9 @@ fun MainScreen(navController: NavController) {
 
         Button(
             onClick = { navController.navigate("photoScreen") },
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
             shape = RoundedCornerShape(10.dp)
         ) {
             Text(text = "Capture Photo")
@@ -100,11 +111,12 @@ fun MainScreen(navController: NavController) {
 
         Button(
             onClick = { navController.navigate("videoScreen") },
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
             shape = RoundedCornerShape(10.dp)
         ) {
             Text(text = "Capture Video")
         }
     }
 }
-

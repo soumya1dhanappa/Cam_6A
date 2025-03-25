@@ -1,182 +1,138 @@
 package com.fluffy.cam6a.camera
 
-import android.Manifest
-import android.annotation.SuppressLint
+import android.R.attr.id
 import android.content.Context
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.ImageFormat
 import android.graphics.Rect
-import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
-import android.media.ImageReader
-import android.os.*
 import android.util.Log
 import android.view.Surface
 import android.view.TextureView
 import androidx.core.app.ActivityCompat
+import android.content.pm.PackageManager
+import kotlin.math.max
+import kotlin.math.min
 
 class CameraHelper(private val context: Context, private val textureView: TextureView) {
-
-    private var captureSession: CameraCaptureSession? = null
-    private var imageReader: ImageReader? = null
-    private var backgroundThread: HandlerThread? = null
-    private var backgroundHandler: Handler? = null
-    private var captureRequestBuilder: CaptureRequest.Builder? = null
-    private var zoomLevel: Float = 1.0f // Default zoom level
-    private var _cameraId: String = ""
-    var cameraId: String
-        get() = _cameraId
-        private set(value) { _cameraId = value }
-    internal var cameraDevice: CameraDevice? = null
-    private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+    private lateinit var cameraDevice: CameraDevice
+    private lateinit var captureRequestBuilder: CaptureRequest.Builder
+    private lateinit var cameraCaptureSession: CameraCaptureSession
+    private val cameraManager: CameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+    private var zoomLevel = 1.0f
+    private var minExposure = 0
+    private var maxExposure = 0
+    private var currentExposure = 0
+    private var cameraId: String = ""
+    private var isFrontCamera = false // Default to back camera
 
     init {
-        startBackgroundThread()
-        cameraId = getBackCameraId()
-        Log.d(TAG, "Camera initialized with ID: $cameraId")
+        setupCamera()
     }
 
-    private fun getBackCameraId(): String {
-        return cameraManager.cameraIdList.find {
-            cameraManager.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
-        } ?: ""
+    private fun setupCamera() {
+        cameraId = getCameraId(isFrontCamera)
+        val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+        minExposure = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)?.lower ?: 0
+        maxExposure = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)?.upper ?: 0
     }
 
-    private fun getFrontCameraId(): String {
-        return cameraManager.cameraIdList.find { id ->
-            val characteristics = cameraManager.getCameraCharacteristics(id)
-            characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
-        } ?: ""
-    }
-
-    private fun startBackgroundThread() {
-        backgroundThread = HandlerThread("CameraBackgroundThread").apply { start() }
-        backgroundHandler = Handler(backgroundThread!!.looper)
-    }
-
-    private fun stopBackgroundThread() {
-        backgroundThread?.quitSafely()
-        backgroundThread?.join()
-        backgroundThread = null
-        backgroundHandler = null
-    }
-
-    @SuppressLint("MissingPermission")
     fun openCamera() {
-        if (cameraDevice != null) {
-            Log.d(TAG, "Camera already open")
-            return
+        try {
+            if (ActivityCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                Log.e("CameraHelper", "Camera permission not granted")
+                return
+            }
+
+            cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+                override fun onOpened(camera: CameraDevice) {
+                    cameraDevice = camera
+                    createCameraPreviewSession()
+                }
+
+                override fun onDisconnected(camera: CameraDevice) {
+                    camera.close()
+                }
+
+                override fun onError(camera: CameraDevice, error: Int) {
+                    camera.close()
+                    Log.e("CameraHelper", "Camera error: $error")
+                }
+            }, null)
+        } catch (e: CameraAccessException) {
+            Log.e("CameraHelper", "Failed to open camera: ${e.message}")
         }
-
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            Log.e(TAG, "Camera permission not granted")
-            return
-        }
-
-        cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
-            override fun onOpened(camera: CameraDevice) {
-                cameraDevice = camera
-                createCameraPreviewSession()
-            }
-
-            override fun onDisconnected(camera: CameraDevice) {
-                camera.close()
-                cameraDevice = null
-            }
-
-            override fun onError(camera: CameraDevice, error: Int) {
-                camera.close()
-                cameraDevice = null
-            }
-        }, backgroundHandler)
     }
-
 
     private fun createCameraPreviewSession() {
-        val surfaceTexture = textureView.surfaceTexture ?: return
-        surfaceTexture.setDefaultBufferSize(textureView.width, textureView.height)
-        val previewSurface = Surface(surfaceTexture)
-
-        captureRequestBuilder = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-        captureRequestBuilder?.addTarget(previewSurface)
-
-        cameraDevice?.createCaptureSession(
-            listOf(previewSurface),
-            object : CameraCaptureSession.StateCallback() {
-                override fun onConfigured(session: CameraCaptureSession) {
-                    captureSession = session
-                    captureSession?.setRepeatingRequest(captureRequestBuilder!!.build(), null, backgroundHandler)
-                }
-                override fun onConfigureFailed(session: CameraCaptureSession) {
-                    Log.e(TAG, "Session configuration failed")
-                }
-            }, backgroundHandler
-        )
-    }
-
-    fun applyZoomToCamera(zoomFactor: Float) {
-        if (cameraDevice == null || captureSession == null) {
-            Log.e(TAG, "Cannot apply zoom: Camera is not open")
-            return
-        }
-
         try {
-            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
-            val rect = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE) ?: return
-            val maxZoom = characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1f
-            val newZoom = zoomFactor.coerceIn(1.0f, maxZoom)
+            val surfaceTexture = textureView.surfaceTexture ?: return
+            surfaceTexture.setDefaultBufferSize(textureView.width, textureView.height)
+            val surface = Surface(surfaceTexture)
 
-            val cropWidth = (rect.width() / newZoom).toInt()
-            val cropHeight = (rect.height() / newZoom).toInt()
-            val zoomRect = Rect(
-                rect.centerX() - cropWidth / 2,
-                rect.centerY() - cropHeight / 2,
-                rect.centerX() + cropWidth / 2,
-                rect.centerY() + cropHeight / 2
-            )
+            captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+            captureRequestBuilder.addTarget(surface)
 
-            captureRequestBuilder?.set(CaptureRequest.SCALER_CROP_REGION, zoomRect)
-            captureSession?.setRepeatingRequest(captureRequestBuilder!!.build(), null, backgroundHandler)
-            Log.d(TAG, "Zoom applied: $newZoom")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to apply zoom: ${e.localizedMessage}")
+            cameraDevice.createCaptureSession(listOf(surface), object : CameraCaptureSession.StateCallback() {
+                override fun onConfigured(session: CameraCaptureSession) {
+                    cameraCaptureSession = session
+                    updatePreview()
+                }
+
+                override fun onConfigureFailed(session: CameraCaptureSession) {
+                    Log.e("CameraHelper", "Failed to configure camera preview")
+                }
+            }, null)
+        } catch (e: CameraAccessException) {
+            Log.e("CameraHelper", "Failed to create camera preview session: ${e.message}")
         }
     }
 
     fun captureBitmap(): Bitmap? {
-        return if (textureView.isAvailable) {
-            textureView.bitmap
-        } else {
-            Log.e(TAG, "TextureView is not available")
-            null
-        }
+        return textureView.bitmap
     }
 
-    fun closeCamera() {
-        stopBackgroundThread()
-        cameraDevice?.close()
-        cameraDevice = null
-        captureSession?.close()
-        captureSession = null
-        imageReader?.close()
-        imageReader = null
+    fun applyZoom(zoomLevel: Float) {
+        this.zoomLevel = zoomLevel.coerceIn(1.0f, 3.0f) // Limit zoom between 1x and 3x
+        updatePreview()
+    }
+
+    fun adjustExposure(increase: Boolean) {
+        currentExposure = if (increase) min(currentExposure + 1, maxExposure) else max(currentExposure - 1, minExposure)
+        updatePreview()
+    }
+
+    private fun updatePreview() {
+        captureRequestBuilder.set(CaptureRequest.SCALER_CROP_REGION, getZoomRect())
+        captureRequestBuilder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, currentExposure)
+        cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null)
     }
 
     fun switchCamera() {
-        cameraId = if (cameraId == getBackCameraId()) getFrontCameraId() else getBackCameraId()
-        if (cameraId.isEmpty()) {
-            Log.e(TAG, "Failed to switch camera: No valid camera ID found")
-            return
-        }
-
-        Log.d(TAG, "Switching to Camera ID: $cameraId")
-        closeCamera()
+        cameraDevice?.close()
+        isFrontCamera = !isFrontCamera
+        cameraId = getCameraId(isFrontCamera)
         openCamera()
-        zoomLevel = 1.0f // Reset zoom on switch
     }
 
-    companion object {
-        private const val TAG = "CameraHelper"
+    private fun getCameraId(front: Boolean): String {
+        for (id in cameraManager.cameraIdList) {
+            val characteristics = cameraManager.getCameraCharacteristics(id)
+            val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+            if ((front && facing == CameraCharacteristics.LENS_FACING_FRONT) ||
+                (!front && facing == CameraCharacteristics.LENS_FACING_BACK)) {
+                return id
+            }
+        }
+        return cameraManager.cameraIdList[id]
+    }
+
+    private fun getZoomRect(): Rect {
+        val sensorSize = cameraManager.getCameraCharacteristics(cameraId).get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+            ?: return Rect()
+        val centerX = sensorSize.width() / 2
+        val centerY = sensorSize.height() / 2
+        val deltaX = (sensorSize.width() / zoomLevel).toInt() / 2
+        val deltaY = (sensorSize.height() / zoomLevel).toInt() / 2
+        return Rect(centerX - deltaX, centerY - deltaY, centerX + deltaX, centerY + deltaY)
     }
 }

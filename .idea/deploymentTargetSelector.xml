@@ -4,10 +4,10 @@
     <selectionStates>
       <SelectionState runConfigName="Cam6A.app">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-03-21T06:54:00.349275Z">
+        <DropdownSelection timestamp="2025-03-24T19:12:10.086116Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\SGu599\.android\avd\Pixel_9.avd" />
+              <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\SGu599\.android\avd\Pixel_6.avd" />
             </handle>
           </Target>
         </DropdownSelection>

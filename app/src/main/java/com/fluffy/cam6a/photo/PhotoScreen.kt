@@ -1,3 +1,5 @@
+package com.fluffy.cam6a.photo
+
 import android.app.Activity
 import android.app.Application
 import android.content.Intent
@@ -13,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.SwitchCamera
@@ -28,26 +31,33 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.fluffy.cam6a.photo.PhotoViewModel
-import com.fluffy.cam6a.photo.PhotoViewModelFactory
+import com.fluffy.cam6a.filters.FiltersViewModel
 import com.fluffy.cam6a.ui.components.CameraPreview
 import com.fluffy.cam6a.ui.components.FilterBar
-import com.fluffy.cam6a.filters.FiltersViewModel
-import com.fluffy.cam6a.camera.CameraHelper
-import com.fluffy.cam6a.filters.FiltersViewModelFactory
+import com.fluffy.cam6a.ui.components.FilterType
 
 @Composable
-fun PhotoScreen(navController: NavController,cameraHelper: CameraHelper) { // âœ… Pass CameraHelper
+fun PhotoScreen(
+    navController: NavController,
+    filtersViewModel: FiltersViewModel,  // Injected FiltersViewModel for filters
+    photoViewModel: PhotoViewModel,
+    onBack: () -> Unit  // Handles back action
+) {
     val context = LocalContext.current.applicationContext as Application
     val photoViewModel: PhotoViewModel = viewModel(factory = PhotoViewModelFactory(context))
-    val filtersViewModel: FiltersViewModel = viewModel(factory = FiltersViewModelFactory(cameraHelper))
-
 
     val captureSuccess by photoViewModel.captureSuccess.observeAsState(initial = false)
     val recentImages by photoViewModel.recentImages.observeAsState(initial = emptyList())
 
+    // Get the selected filter from FiltersViewModel
+    val selectedFilter = photoViewModel.selectedFilter.observeAsState().value ?: FilterType.NONE
 
+    // Fetch recent images when screen loads
+    LaunchedEffect(Unit) {
+        photoViewModel.fetchRecentImages()
+    }
 
+    // Gallery launcher to select image from gallery
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -55,6 +65,7 @@ fun PhotoScreen(navController: NavController,cameraHelper: CameraHelper) { // âœ
             val imageUri = result.data?.data
             imageUri?.let {
                 Toast.makeText(context, "Image Selected: $it", Toast.LENGTH_SHORT).show()
+                // Process the selected image (e.g., apply filters)
             }
         }
     }
@@ -64,12 +75,28 @@ fun PhotoScreen(navController: NavController,cameraHelper: CameraHelper) { // âœ
             .fillMaxSize()
             .background(Color(0xFFA5AFF3))
     ) {
-        FilterBar(filtersViewModel, cameraHelper ) // âœ… Pass CameraHelper
+        // Top Bar (Back Button)
+
+
+        // FilterBar UI Above CameraPreview
+        photoViewModel.cameraHelper?.let { cameraHelper ->
+            FilterBar(
+
+                filtersViewModel = filtersViewModel, // âœ… Pass filtersViewModel properly
+                cameraHelper = cameraHelper,  // âœ… Ensure cameraHelper is passed
+
+                onBack = onBack
+            )
+        }
+
+
+
+        // Camera Preview with applied filter
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(1.dp)
+                .padding(8.dp)
         ) {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
@@ -78,14 +105,17 @@ fun PhotoScreen(navController: NavController,cameraHelper: CameraHelper) { // âœ
             )
         }
 
+        // Recent Images Row
         RecentImagesRow(recentImages)
 
+        // Bottom UI (Gallery, Capture, Switch Camera)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceAround
         ) {
+            // Gallery Button
             IconButton(onClick = {
                 val intent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                 intent.type = "image/*"
@@ -94,10 +124,15 @@ fun PhotoScreen(navController: NavController,cameraHelper: CameraHelper) { // âœ
                 Icon(imageVector = Icons.Default.Collections, contentDescription = "Gallery", tint = Color.White)
             }
 
-            Button(onClick = { photoViewModel.captureImage(filtersViewModel) }, modifier = Modifier.size(72.dp)) {
+            // Capture Button
+            Button(
+                onClick = { photoViewModel.captureImage(filtersViewModel) },
+                modifier = Modifier.size(72.dp)
+            ) {
                 Icon(imageVector = Icons.Default.CameraAlt, contentDescription = "Capture", tint = Color.Black)
             }
 
+            // Switch Camera Button
             IconButton(onClick = { photoViewModel.switchCamera() }) {
                 Icon(imageVector = Icons.Default.SwitchCamera, contentDescription = "Switch Camera", tint = Color.White)
             }
@@ -110,6 +145,7 @@ fun PhotoScreen(navController: NavController,cameraHelper: CameraHelper) { // âœ
     }
 }
 
+/** Displays recent images in a horizontal row */
 @Composable
 fun RecentImagesRow(images: List<Uri>) {
     if (images.isNotEmpty()) {
@@ -130,13 +166,6 @@ fun RecentImagesRow(images: List<Uri>) {
                         .clickable { /* Future: Open image fullscreen */ }
                 )
             }
-        }
-    } else {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp)
-        ) {
         }
     }
 }
