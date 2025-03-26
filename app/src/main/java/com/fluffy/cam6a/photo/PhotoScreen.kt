@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.SwitchCamera
@@ -34,13 +33,15 @@ import coil.compose.AsyncImage
 import com.fluffy.cam6a.filters.FiltersViewModel
 import com.fluffy.cam6a.ui.components.CameraPreview
 import com.fluffy.cam6a.ui.components.FilterBar
-import com.fluffy.cam6a.ui.components.FilterType
+import com.fluffy.cam6a.video.VideoViewModel
+
 
 @Composable
 fun PhotoScreen(
     navController: NavController,
     filtersViewModel: FiltersViewModel,  // Injected FiltersViewModel for filters
     photoViewModel: PhotoViewModel,
+    videoViewModel: VideoViewModel.Companion,
     onBack: () -> Unit  // Handles back action
 ) {
     val context = LocalContext.current.applicationContext as Application
@@ -48,9 +49,11 @@ fun PhotoScreen(
 
     val captureSuccess by photoViewModel.captureSuccess.observeAsState(initial = false)
     val recentImages by photoViewModel.recentImages.observeAsState(initial = emptyList())
+    val videoViewModel: VideoViewModel = viewModel()
+
 
     // Get the selected filter from FiltersViewModel
-    val selectedFilter = photoViewModel.selectedFilter.observeAsState().value ?: FilterType.NONE
+
 
     // Fetch recent images when screen loads
     LaunchedEffect(Unit) {
@@ -101,7 +104,8 @@ fun PhotoScreen(
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
                 photoViewModel = photoViewModel,
-                filtersViewModel = filtersViewModel
+                filtersViewModel = filtersViewModel,
+                videoViewModel = videoViewModel
             )
         }
 

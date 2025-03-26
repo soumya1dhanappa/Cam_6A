@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -48,6 +49,23 @@ class FileHelper(private val context: Context) {
         } catch (e: IOException) {
             logError("Error saving image: ${e.localizedMessage}")
             null
+        }
+    }
+
+    /** Saves the recorded video to the gallery */
+    fun saveVideoToGallery(videoUri: Uri): Uri? {
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, "VIDEO_${System.currentTimeMillis()}.mp4")
+            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+            put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Cam6A")
+        }
+
+        return context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)?.also { uri ->
+            context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                context.contentResolver.openInputStream(videoUri)?.use { inputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
         }
     }
 
@@ -100,25 +118,27 @@ class FileHelper(private val context: Context) {
 
     // Create a new video file in the app-specific directory or shared media collection
     fun createVideoFile(): File {
-        val timeStamp = SimpleDateFormat(FILENAME_FORMAT, Locale.US).format(Date())
-        val fileName = "$VIDEO_PREFIX$timeStamp$VIDEO_EXTENSION"
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val fileName = "VIDEO_$timeStamp.mp4"
 
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val contentValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Cam6A")
-            }
-
-            val uri = context.contentResolver.insert(
-                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                contentValues
-            ) ?: throw RuntimeException("Failed to create media collection entry")
-
-            File(uri.toString())
+        val storageDir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
         } else {
-            val storageDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)
-            File(storageDir, fileName).apply { parentFile?.mkdirs() }
+            Environment.getExternalStorageDirectory()
         }
+
+        return File(storageDir, fileName).apply {
+            parentFile?.mkdirs() // Create the directory if it doesn't exist
+        }
+    }
+
+    fun notifyMediaScanner(file: File) {
+        MediaScannerConnection.scanFile(
+            context,
+            arrayOf(file.absolutePath),
+            arrayOf("video/mp4"),
+            null
+        )
+        Log.d(TAG, "MediaScanner notified about: ${file.absolutePath}")
     }
 }

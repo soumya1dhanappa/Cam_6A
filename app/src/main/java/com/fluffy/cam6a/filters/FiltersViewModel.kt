@@ -6,7 +6,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import com.fluffy.cam6a.ui.components.FilterType
+
 class FiltersViewModel(application: Application) : AndroidViewModel(application) {
     // Current filter type and function
     private val _currentFilterType = MutableLiveData<FilterType>(FilterType.NONE)

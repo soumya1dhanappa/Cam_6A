@@ -3,6 +3,7 @@ package com.fluffy.cam6a.ui.components
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.SurfaceTexture
+import android.util.Log
 import android.view.TextureView
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -24,21 +25,35 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.fluffy.cam6a.filters.FiltersViewModel
 import com.fluffy.cam6a.photo.PhotoViewModel
+import com.fluffy.cam6a.video.VideoViewModel
+
 @Composable
 fun CameraPreview(
     modifier: Modifier = Modifier,
     photoViewModel: PhotoViewModel,
-    filtersViewModel: FiltersViewModel
+    filtersViewModel: FiltersViewModel,
+    videoViewModel: VideoViewModel
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val updatedViewModel by rememberUpdatedState(photoViewModel)
+    val updatedPhotoViewModel by rememberUpdatedState(photoViewModel)
     val selectedFilter by filtersViewModel.currentFilterFunction.observeAsState()
+
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                updatedViewModel.openCamera()
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    Log.d("CameraPreview", "Lifecycle RESUME: Opening camera")
+                    updatedPhotoViewModel.openCamera()
+                    videoViewModel.openCamera()
+
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    Log.d("CameraPreview", "Lifecycle PAUSE: Releasing resources")
+                    videoViewModel.releaseAll()
+                }
+                else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -59,7 +74,6 @@ fun CameraPreview(
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
                 }
-
                 val imageView = ImageView(ctx).apply {
                     layoutParams = FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -70,37 +84,38 @@ fun CameraPreview(
 
                 textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                     override fun onSurfaceTextureAvailable(
-                        surface: android.graphics.SurfaceTexture,
+                        surface: SurfaceTexture,
                         width: Int,
                         height: Int
                     ) {
+                        Log.d("CameraPreview", "Surface available: Setting textureView")
                         if (ActivityCompat.checkSelfPermission(
                                 context,
                                 Manifest.permission.CAMERA
                             ) == PackageManager.PERMISSION_GRANTED
                         ) {
-                            updatedViewModel.setTextureView(textureView)
+                            updatedPhotoViewModel.setTextureView(textureView)
+                            videoViewModel.initializeTextureView(textureView)
                         }
                     }
 
                     override fun onSurfaceTextureSizeChanged(
-                        surface: android.graphics.SurfaceTexture,
+                        surface: SurfaceTexture,
                         width: Int,
                         height: Int
                     ) {}
 
-                    override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
+                    override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
                         return true
                     }
 
-                    override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {
+                    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
                         textureView.bitmap?.let { originalBitmap ->
                             val filteredBitmap = selectedFilter?.invoke(originalBitmap) ?: originalBitmap
                             imageView.post { imageView.setImageBitmap(filteredBitmap) }
                         }
                     }
                 }
-
                 addView(textureView)
                 addView(imageView)
             }
