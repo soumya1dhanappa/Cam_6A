@@ -1,3 +1,5 @@
+package com.fluffy.cam6a.photo
+
 import android.app.Activity
 import android.app.Application
 import android.content.Intent
@@ -28,33 +30,45 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.fluffy.cam6a.photo.PhotoViewModel
-import com.fluffy.cam6a.photo.PhotoViewModelFactory
+import com.fluffy.cam6a.filters.FiltersViewModel
 import com.fluffy.cam6a.ui.components.CameraPreview
+import com.fluffy.cam6a.ui.components.FilterBar
+import com.fluffy.cam6a.video.VideoViewModel
+
 
 @Composable
-fun PhotoScreen(navController: NavController) {
+fun PhotoScreen(
+    navController: NavController,
+    filtersViewModel: FiltersViewModel,  // Injected FiltersViewModel for filters
+    photoViewModel: PhotoViewModel,
+    videoViewModel: VideoViewModel.Companion,
+    onBack: () -> Unit  // Handles back action
+) {
     val context = LocalContext.current.applicationContext as Application
     val photoViewModel: PhotoViewModel = viewModel(factory = PhotoViewModelFactory(context))
 
     val captureSuccess by photoViewModel.captureSuccess.observeAsState(initial = false)
     val recentImages by photoViewModel.recentImages.observeAsState(initial = emptyList())
+    val videoViewModel: VideoViewModel = viewModel()
+
+
+    // Get the selected filter from FiltersViewModel
+
 
     // Fetch recent images when screen loads
     LaunchedEffect(Unit) {
         photoViewModel.fetchRecentImages()
     }
 
-    // ActivityResultLauncher for opening gallery
+    // Gallery launcher to select image from gallery
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val imageUri = result.data?.data
-            // Handle the selected image URI if needed
             imageUri?.let {
-                // You can pass the selected image URI to your ViewModel or handle it as needed
                 Toast.makeText(context, "Image Selected: $it", Toast.LENGTH_SHORT).show()
+                // Process the selected image (e.g., apply filters)
             }
         }
     }
@@ -64,17 +78,38 @@ fun PhotoScreen(navController: NavController) {
             .fillMaxSize()
             .background(Color(0xFFA5AFF3))
     ) {
-        // Camera Preview Section
+        // Top Bar (Back Button)
+
+
+        // FilterBar UI Above CameraPreview
+        photoViewModel.cameraHelper?.let { cameraHelper ->
+            FilterBar(
+
+                filtersViewModel = filtersViewModel, // ✅ Pass filtersViewModel properly
+                cameraHelper = cameraHelper,  // ✅ Ensure cameraHelper is passed
+
+                onBack = onBack
+            )
+        }
+
+
+
+        // Camera Preview with applied filter
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(16.dp)
+                .padding(8.dp)
         ) {
-            CameraPreview(modifier = Modifier.fillMaxSize(), photoViewModel)
+            CameraPreview(
+                modifier = Modifier.fillMaxSize(),
+                photoViewModel = photoViewModel,
+                filtersViewModel = filtersViewModel,
+                videoViewModel = videoViewModel
+            )
         }
 
-        // Recent Images Row (Displays last 5 clicked images)
+        // Recent Images Row
         RecentImagesRow(recentImages)
 
         // Bottom UI (Gallery, Capture, Switch Camera)
@@ -84,9 +119,8 @@ fun PhotoScreen(navController: NavController) {
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceAround
         ) {
-            // Gallery Button (Opens Recent Images)
+            // Gallery Button
             IconButton(onClick = {
-                // Create an Intent to open the gallery
                 val intent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
                 intent.type = "image/*"
                 galleryLauncher.launch(intent)
@@ -95,7 +129,10 @@ fun PhotoScreen(navController: NavController) {
             }
 
             // Capture Button
-            Button(onClick = { photoViewModel.captureImage() }, modifier = Modifier.size(72.dp)) {
+            Button(
+                onClick = { photoViewModel.captureImage(filtersViewModel) },
+                modifier = Modifier.size(72.dp)
+            ) {
                 Icon(imageVector = Icons.Default.CameraAlt, contentDescription = "Capture", tint = Color.Black)
             }
 
@@ -133,14 +170,6 @@ fun RecentImagesRow(images: List<Uri>) {
                         .clickable { /* Future: Open image fullscreen */ }
                 )
             }
-        }
-    } else {
-        // Wrap Text inside Box to use align
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp)
-        ) {
         }
     }
 }

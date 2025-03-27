@@ -1,66 +1,74 @@
 package com.fluffy.cam6a.camera
 
-import android.Manifest
-import android.annotation.SuppressLint
+import android.R.attr.id
 import android.content.Context
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.ImageFormat
-import android.graphics.SurfaceTexture
+import android.graphics.Rect
 import android.hardware.camera2.*
-import android.media.ImageReader
-import android.media.MediaRecorder
-import android.net.Uri
-import android.os.*
 import android.util.Log
 import android.view.Surface
 import android.view.TextureView
 import androidx.core.app.ActivityCompat
-import com.fluffy.cam6a.utils.FileHelper
+import android.content.pm.PackageManager
+import android.media.ImageReader
+import android.media.MediaRecorder
+import android.net.Uri
+import android.os.HandlerThread
+import com.fluffy.cam6a.photo.PhotoViewModel.Companion.TAG
 import java.io.File
+import android.os.Handler
+import android.os.Looper
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.fluffy.cam6a.utils.FileHelper
+import kotlin.math.max
+import kotlin.math.min
 
 class CameraHelper(
     private val context: Context,
     private val textureView: TextureView,
-    private val fileHelper: FileHelper
+    fileHelper1: FileHelper
 ) {
+    private lateinit var cameraDevice: CameraDevice
+    private lateinit var captureRequestBuilder: CaptureRequest.Builder
+    private lateinit var cameraCaptureSession: CameraCaptureSession
+    private val cameraManager: CameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
+    private var isPreviewReady =false
+    private var zoomLevel = 1.0f
+    private var minExposure = 0
+    private var maxExposure = 0
+    private var currentExposure = 0
     private var cameraId: String = ""
-    private var cameraDevice: CameraDevice? = null
-    private var captureSession: CameraCaptureSession? = null
+    private var isFrontCamera = false
+    // Default to back camera
     private var imageReader: ImageReader? = null
-    private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+    private lateinit var captureSession: CameraCaptureSession
+
     private var backgroundThread: HandlerThread? = null
-    private var backgroundHandler: Handler? = null
+    private var backgroundHandler: Handler? = Handler(Looper.getMainLooper())
+
     private var mediaRecorder: MediaRecorder? = null
     private var isRecording = false
     private var recordingFile: File? = null
+    private val fileHelper = FileHelper(context)
 
     init {
         startBackgroundThread()
-        cameraId = getBackCameraId()
-        Log.d(TAG, "Camera initialized with ID: $cameraId")
+        cameraId = getCameraId(isFrontCamera)
+        setupCamera()
     }
-
-    private fun getBackCameraId(): String {
-        return cameraManager.cameraIdList.find { id ->
-            val characteristics = cameraManager.getCameraCharacteristics(id)
-            characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
-        } ?: ""
-    }
-
-    private fun getFrontCameraId(): String {
-        return cameraManager.cameraIdList.find { id ->
-            val characteristics = cameraManager.getCameraCharacteristics(id)
-            characteristics.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
-        } ?: ""
-    }
-
     private fun startBackgroundThread() {
         backgroundThread = HandlerThread("CameraBackgroundThread").apply { start() }
         backgroundHandler = Handler(backgroundThread!!.looper)
     }
 
+    private fun setupCamera() {
+        cameraId = getCameraId(isFrontCamera)
+        val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+        minExposure = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)?.lower ?: 0
+        maxExposure = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE)?.upper ?: 0
+    }
     private fun stopBackgroundThread() {
         backgroundThread?.quitSafely()
         backgroundThread?.join()
@@ -68,31 +76,10 @@ class CameraHelper(
         backgroundHandler = null
     }
 
-    @SuppressLint("MissingPermission")
     fun openCamera() {
-        if (cameraId.isEmpty() || ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            Log.e(TAG, "Camera permission not granted or invalid camera ID")
-            return
-        }
-
-        if (textureView.isAvailable) {
-            startCameraSession()
-        } else {
-            textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-                    startCameraSession()
-                }
-
-                override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
-                override fun onSurfaceTextureDestroyed(surface: SurfaceTexture) = false
-                override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
-            }
-        }
-    }
-
-    private fun startCameraSession() {
         try {
-            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            if (ActivityCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                Log.e("CameraHelper", "Camera permission not granted")
                 return
             }
 
@@ -104,53 +91,113 @@ class CameraHelper(
 
                 override fun onDisconnected(camera: CameraDevice) {
                     camera.close()
-                    cameraDevice = null
                 }
 
                 override fun onError(camera: CameraDevice, error: Int) {
                     camera.close()
-                    cameraDevice = null
+                    Log.e("CameraHelper", "Camera error: $error")
                 }
-            }, backgroundHandler)
+            }, null)
         } catch (e: CameraAccessException) {
-            Log.e(TAG, "Error opening camera: ${e.message}")
+            Log.e("CameraHelper", "Failed to open camera: ${e.message}")
         }
     }
 
     private fun createCameraPreviewSession() {
-        val surfaceTexture = textureView.surfaceTexture ?: return
-        surfaceTexture.setDefaultBufferSize(textureView.width, textureView.height)
-        val previewSurface = Surface(surfaceTexture)
-
-        if (imageReader == null) {
-            imageReader = ImageReader.newInstance(textureView.width, textureView.height, ImageFormat.JPEG, 1)
-        }
-
-        val captureRequestBuilder = cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-        captureRequestBuilder?.addTarget(previewSurface)
-
         try {
-            cameraDevice?.createCaptureSession(
-                listOf(previewSurface, imageReader!!.surface),
-                object : CameraCaptureSession.StateCallback() {
-                    override fun onConfigured(session: CameraCaptureSession) {
-                        captureSession = session
-                        captureRequestBuilder?.build()?.let {
-                            captureSession?.setRepeatingRequest(it, null, backgroundHandler)
-                        }
-                    }
+            val surfaceTexture = textureView.surfaceTexture ?: run {
+                Log.e(TAG, "Surface texture is null")
+                return
+            }
+            surfaceTexture.setDefaultBufferSize(textureView.width, textureView.height)
+            val surface = Surface(surfaceTexture)
 
-                    override fun onConfigureFailed(session: CameraCaptureSession) {
-                        Log.e(TAG, "Session configuration failed")
-                    }
-                },
-                backgroundHandler
-            )
+            captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                addTarget(surface)
+                // Apply initial zoom and exposure settings
+                set(CaptureRequest.SCALER_CROP_REGION, getZoomRect())
+                set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, currentExposure)
+            }
+
+            cameraDevice.createCaptureSession(listOf(surface), object : CameraCaptureSession.StateCallback() {
+                override fun onConfigured(session: CameraCaptureSession) {
+                    cameraCaptureSession = session
+                    isPreviewReady = true
+                    updatePreview()
+                    Log.d(TAG, "Preview session configured")
+                }
+
+                override fun onConfigureFailed(session: CameraCaptureSession) {
+                    isPreviewReady = false
+                    Log.e(TAG, "Failed to configure camera preview")
+                }
+            }, backgroundHandler)
         } catch (e: CameraAccessException) {
-            Log.e(TAG, "Error configuring session: ${e.message}")
+            isPreviewReady = false
+            Log.e(TAG, "Failed to create camera preview session: ${e.message}")
         }
     }
 
+
+
+    fun captureBitmap(): Bitmap? {
+        return textureView.bitmap
+    }
+
+    fun applyZoom(zoomLevel: Float) {
+        this.zoomLevel = zoomLevel.coerceIn(1.0f, 3.0f)
+
+        try {
+            if (::cameraCaptureSession.isInitialized) {
+                updatePreview()
+                Log.d(TAG, "Zoom applied: $zoomLevel")
+            } else {
+                Log.w(TAG, "Zoom settings will be applied when preview is ready")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Zoom failed: ${e.message}")
+        }
+    }
+
+    fun adjustExposure(increase: Boolean) {
+        currentExposure = if (increase) min(currentExposure + 1, maxExposure) else max(currentExposure - 1, minExposure)
+        updatePreview()
+    }
+
+    private fun updatePreview() {
+        captureRequestBuilder.set(CaptureRequest.SCALER_CROP_REGION, getZoomRect())
+        captureRequestBuilder.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, currentExposure)
+        cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null)
+    }
+
+    fun switchCamera() {
+        cameraDevice?.close()
+        isFrontCamera = !isFrontCamera
+        cameraId = getCameraId(isFrontCamera)
+        openCamera()
+    }
+
+    private fun getCameraId(front: Boolean): String {
+        for (id in cameraManager.cameraIdList) {
+            val characteristics = cameraManager.getCameraCharacteristics(id)
+            val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+            if ((front && facing == CameraCharacteristics.LENS_FACING_FRONT) ||
+                (!front && facing == CameraCharacteristics.LENS_FACING_BACK)) {
+                return id
+            }
+        }
+        return cameraManager.cameraIdList[id]
+    }
+
+    private fun getZoomRect(): Rect {
+        val sensorSize = cameraManager.getCameraCharacteristics(cameraId).get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+            ?: return Rect()
+        val centerX = sensorSize.width() / 2
+        val centerY = sensorSize.height() / 2
+        val deltaX = (sensorSize.width() / zoomLevel).toInt() / 2
+        val deltaY = (sensorSize.height() / zoomLevel).toInt() / 2
+        return Rect(centerX - deltaX, centerY - deltaY, centerX + deltaX, centerY + deltaY)
+    }
     fun startRecording() {
         if (isRecording) return
 
@@ -172,12 +219,12 @@ class CameraHelper(
             val previewSurface = Surface(textureView.surfaceTexture)
             val recorderSurface = mediaRecorder!!.surface
 
-            cameraDevice?.createCaptureSession(
+            cameraDevice.createCaptureSession(
                 listOf(previewSurface, recorderSurface),
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(session: CameraCaptureSession) {
                         captureSession = session
-                        val recordRequest = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                        val recordRequest = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                             addTarget(previewSurface)
                             addTarget(recorderSurface)
                         }.build()
@@ -226,35 +273,16 @@ class CameraHelper(
             null
         }
     }
-
-    fun captureBitmap(): Bitmap? {
-        return if (textureView.isAvailable) {
-            textureView.bitmap
-        } else {
-            Log.e(TAG, "TextureView is not available")
-            null
+    fun closeCamera() {
+        try {
+            cameraCaptureSession.close() // Close the active session
+            cameraDevice.close() // Close the camera device
+            cameraDevice
+            Log.d("CameraHelper", "Camera closed successfully")
+        } catch (e: Exception) {
+            Log.e("CameraHelper", "Error closing camera: ${e.message}")
         }
     }
 
-    fun closeCamera() {
-        stopBackgroundThread()
-        cameraDevice?.close()
-        cameraDevice = null
-        captureSession?.close()
-        captureSession = null
-        imageReader?.close()
-        imageReader = null
-        mediaRecorder?.release()
-        mediaRecorder = null
-    }
 
-    fun switchCamera() {
-        cameraId = if (cameraId == getBackCameraId()) getFrontCameraId() else getBackCameraId()
-        closeCamera()
-        openCamera()
-    }
-
-    companion object {
-        private const val TAG = "CameraHelper"
-    }
 }

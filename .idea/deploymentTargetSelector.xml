@@ -2,12 +2,12 @@
 <project version="4">
   <component name="deploymentTargetSelector">
     <selectionStates>
-      <SelectionState runConfigName="app">
+      <SelectionState runConfigName="Cam6A.app">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2025-03-21T08:55:27.657555400Z">
+        <DropdownSelection timestamp="2025-03-24T19:12:10.086116Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="PhysicalDevice" identifier="serial=RZ8R12BWXME" />
+              <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\SGu599\.android\avd\Pixel_6.avd" />
             </handle>
           </Target>
         </DropdownSelection>

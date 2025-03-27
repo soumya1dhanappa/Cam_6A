@@ -2,6 +2,7 @@ package com.fluffy.cam6a.video
 
 import android.app.Application
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
@@ -9,6 +10,7 @@ import android.view.TextureView
 import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.*
 import com.fluffy.cam6a.camera.CameraHelper
+import com.fluffy.cam6a.filters.FiltersViewModel
 import com.fluffy.cam6a.utils.FileHelper
 import com.fluffy.cam6a.utils.PermissionHelper
 import kotlinx.coroutines.Dispatchers
@@ -18,10 +20,10 @@ import java.util.*
 class VideoViewModel(application: Application) : AndroidViewModel(application) {
 
     private var textureViewState: TextureView? = null
-    private var cameraHelper: CameraHelper? = null
+    var cameraHelper: CameraHelper? = null
     private val context = getApplication<Application>().applicationContext
 
-    private val fileHelper = FileHelper(context) // FileHelper instance
+    private val fileHelper = FileHelper(context)
 
     private val _recordingSuccess = MutableLiveData(false)
     val recordingSuccess: LiveData<Boolean> get() = _recordingSuccess
@@ -37,6 +39,10 @@ class VideoViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _recordingTime = MutableLiveData(0)
     val recordingTime: LiveData<Int> get() = _recordingTime
+
+    // New LiveData for filtered video preview
+    private val _filteredVideoPreview = MutableLiveData<Bitmap?>()
+    val filteredVideoPreview: LiveData<Bitmap?> = _filteredVideoPreview
 
     private var permissionLauncher: ActivityResultLauncher<Array<String>>? = null
     private var recordingTimer: Timer? = null
@@ -61,16 +67,10 @@ class VideoViewModel(application: Application) : AndroidViewModel(application) {
         permissionLauncher?.launch(PermissionHelper.REQUIRED_PERMISSIONS)
     }
 
-    /** Initializes the camera manager */
-    fun initializeCameraManager(context: Context) {
-        // Initialize camera-related components here
-    }
-
     /** Initializes TextureView and CameraHelper */
     fun initializeTextureView(textureView: TextureView) {
         textureViewState = textureView
         if (cameraHelper == null) {
-            // Pass the fileHelper instance to CameraHelper
             cameraHelper = CameraHelper(context, textureView, fileHelper)
         }
         openCamera()
@@ -83,12 +83,19 @@ class VideoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Starts video recording */
-    fun startRecording() {
+    /** Starts video recording with a selected filter */
+    fun startRecording(filtersViewModel: FiltersViewModel) {
         _isRecording.value = true
         startRecordingTimer()
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                // Capture a preview frame and apply the current filter
+                val previewBitmap = cameraHelper?.captureBitmap()
+                previewBitmap?.let { bitmap ->
+                    val filteredPreview = filtersViewModel.applyFilterToBitmap(bitmap)
+                    _filteredVideoPreview.postValue(filteredPreview)
+                }
+
                 cameraHelper?.startRecording()
                 Log.d(TAG, "Recording started")
             } catch (e: Exception) {
@@ -98,15 +105,20 @@ class VideoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Stops video recording and saves the video */
-    fun stopRecording() {
+    fun stopRecording(filtersViewModel: FiltersViewModel) {
         _isRecording.value = false
         stopRecordingTimer()
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val videoUri = cameraHelper?.stopRecording()
                 if (videoUri != null) {
+                    // TODO: Implement video filtering (this might require a separate video filtering mechanism)
+                    // For now, we'll just save the original video
                     _recordingSuccess.postValue(true)
                     Log.d(TAG, "Recording stopped and saved: $videoUri")
+
+                    // Refresh recent videos
+                    fetchRecentVideos()
                 } else {
                     _recordingSuccess.postValue(false)
                     Log.e(TAG, "Failed to save recording")
