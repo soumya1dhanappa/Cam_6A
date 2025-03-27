@@ -3,6 +3,7 @@ accompanistPermissions = "0.31.1-alpha"
 agp = "8.8.2"
 cameraCore = "1.4.1"
 coilCompose = "2.4.0"
+googleTasksVision = "0.10.0"
 kotlin = "2.0.0"
 coreKtx = "1.15.0"
 junit = "4.13.2"
@@ -17,6 +18,10 @@ materialIconsExtended = "1.7.8"
 navigationCompose = "2.8.9"
 navigationComposeVersion = "2.7.2"
 navigationRuntimeAndroid = "2.9.0-alpha08"
+playServicesBase = "18.6.0"
+solutionCore = "0.10.20"
+tasksVision = "latest_version"
+tasksVisionVersion = "0.10.1"
 ui = "1.7.8"
 uiToolingPreview = "1.7.8"
 lifecycleProcess = "2.8.7"
@@ -54,6 +59,11 @@ androidx-material3 = { group = "androidx.compose.material3", name = "material3" 
 androidx-navigation-runtime-android = { group = "androidx.navigation", name = "navigation-runtime-android", version.ref = "navigationRuntimeAndroid" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinxCoroutinesAndroid" }
 material3 = { module = "androidx.compose.material3:material3", version.ref = "material3" }
+play-services-base = { module = "com.google.android.gms:play-services-base", version.ref = "playServicesBase" }
+solution-core = { module = "com.google.mediapipe:solution-core", version.ref = "solutionCore" }
+tasks-vision = { module = "com.google.mediapipe:tasks-vision", version.ref = "tasksVision" }
+tasks-vision-v0100 = { module = "com.google.mediapipe:tasks-vision", version.ref = "googleTasksVision" }
+tasks-vision-v0101 = { module = "com.google.mediapipe:tasks-vision", version.ref = "tasksVisionVersion" }
 ui = { module = "androidx.compose.ui:ui", version.ref = "ui" }
 ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview", version.ref = "uiToolingPreview" }
 androidx-lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "lifecycleProcess" }

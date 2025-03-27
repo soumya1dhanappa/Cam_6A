@@ -1,6 +1,5 @@
 package com.fluffy.cam6a
 
-import PhotoScreen
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -15,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
@@ -23,7 +23,12 @@ import androidx.navigation.compose.composable
 import com.fluffy.cam6a.ui.theme.Cam6ATheme
 import com.fluffy.cam6a.ui.SplashScreen
 import com.fluffy.cam6a.utils.PermissionHelper
-import com.fluffy.cam6a.video.VideoScreen
+import com.fluffy.cam6a.photo.PhotoScreen  // FIXED IMPORT
+import com.fluffy.cam6a.video.VideoScreen  // FIXED IMPORT
+import com.fluffy.cam6a.filters.FiltersViewModel  // Added import for ViewModel
+import com.fluffy.cam6a.photo.PhotoViewModel
+import com.fluffy.cam6a.photo.PhotoViewModelFactory
+import com.fluffy.cam6a.video.VideoViewModel
 
 class MainActivity : ComponentActivity() {
     private lateinit var permissionHelper: PermissionHelper
@@ -60,10 +65,28 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppNavigation(navController: NavHostController, context: ComponentActivity) {
+    val filtersViewModel: FiltersViewModel = viewModel()
+    val videoViewModel: VideoViewModel=viewModel ()
+    val photoViewModel: PhotoViewModel = viewModel(
+        factory = PhotoViewModelFactory(context.application)
+    )
+
     NavHost(navController = navController, startDestination = "mainScreen") {
         composable("mainScreen") { MainScreen(navController) }
-        composable("photoScreen") { PhotoScreen(navController) }
-        composable("videoScreen") { VideoScreen() }
+        composable("photoScreen") {
+            PhotoScreen(
+                navController = navController,
+                filtersViewModel = filtersViewModel,
+                photoViewModel = photoViewModel,
+                onBack = { navController.popBackStack() },
+                videoViewModel = VideoViewModel
+            )
+        }
+        composable("videoScreen") {
+            val videoViewModel: VideoViewModel = viewModel()
+            VideoScreen(navController, videoViewModel)
+        }
+
     }
 }
 
@@ -85,7 +108,9 @@ fun MainScreen(navController: NavController) {
 
         Button(
             onClick = { navController.navigate("photoScreen") },
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
             shape = RoundedCornerShape(10.dp)
         ) {
             Text(text = "Capture Photo")
@@ -93,7 +118,9 @@ fun MainScreen(navController: NavController) {
 
         Button(
             onClick = { navController.navigate("videoScreen") },
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
             shape = RoundedCornerShape(10.dp)
         ) {
             Text(text = "Capture Video")
