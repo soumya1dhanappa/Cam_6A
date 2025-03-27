@@ -40,6 +40,7 @@ fun CameraPreview(
     val selectedFilter by filtersViewModel.currentFilterFunction.observeAsState()
 
 
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -59,6 +60,8 @@ fun CameraPreview(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+
 
     AndroidView(
         modifier = modifier
