@@ -1,6 +1,5 @@
 package com.fluffy.cam6a
 
-import PhotoScreen
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -29,6 +28,7 @@ import com.fluffy.cam6a.video.VideoScreen  // FIXED IMPORT
 import com.fluffy.cam6a.filters.FiltersViewModel  // Added import for ViewModel
 import com.fluffy.cam6a.photo.PhotoViewModel
 import com.fluffy.cam6a.photo.PhotoViewModelFactory
+import com.fluffy.cam6a.video.VideoViewModel
 
 class MainActivity : ComponentActivity() {
     private lateinit var permissionHelper: PermissionHelper
@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppNavigation(navController: NavHostController, context: ComponentActivity) {
     val filtersViewModel: FiltersViewModel = viewModel()
+    val videoViewModel: VideoViewModel=viewModel ()
     val photoViewModel: PhotoViewModel = viewModel(
         factory = PhotoViewModelFactory(context.application)
     )
@@ -77,10 +78,15 @@ fun AppNavigation(navController: NavHostController, context: ComponentActivity) 
                 navController = navController,
                 filtersViewModel = filtersViewModel,
                 photoViewModel = photoViewModel,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                videoViewModel = VideoViewModel
             )
         }
-        composable("videoScreen") { VideoScreen() }
+        composable("videoScreen") {
+            val videoViewModel: VideoViewModel = viewModel()
+            VideoScreen(navController, videoViewModel)
+        }
+
     }
 }
 

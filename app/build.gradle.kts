@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "com.fluffy.cam6a"
-        minSdk = 24
+        minSdk = 28
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -49,6 +49,12 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.navigation.runtime.android)
+    implementation(libs.androidx.lifecycle.process)
+    implementation(libs.androidx.fragment.ktx)
+    implementation(libs.androidx.media3.common.ktx)
+    implementation(libs.androidx.exifinterface)
+    implementation(libs.androidx.runtime.livedata)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -56,4 +62,44 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
+    //navigation
+    implementation("androidx.navigation:navigation-compose:2.7.2")
+    //to import svg fils
+    implementation ("androidx.compose.material:material-icons-extended:1.5.0")
+    implementation ("androidx.compose.material:material:1.5.0") // Use the latest version
+    implementation ("androidx.compose.material:material-icons-extended:1.5.0")
+    //to import svg fils
+    implementation ("androidx.compose.material:material-icons-extended:1.5.0")
+    implementation ("androidx.compose.material:material:1.5.0") // Use the latest version
+    implementation ("androidx.compose.material:material-icons-extended:1.5.0")
+    implementation(libs.androidx.navigation.compose)
+
+    // Jetpack Compose
+        implementation(libs.ui)
+        implementation(libs.material3)
+        implementation(libs.ui.tooling.preview)
+        implementation(libs.androidx.lifecycle.runtime.compose)
+        implementation(libs.androidx.navigation.compose.v272)
+
+        // CameraX (For Camera2 API Support)
+        implementation(libs.androidx.camera.core)
+        implementation(libs.androidx.camera.camera2)
+        implementation(libs.androidx.camera.lifecycle)
+        implementation(libs.androidx.camera.view)
+
+        // Coroutines (For async camera operations)
+        implementation(libs.kotlinx.coroutines.android)
+
+        // Accompanist (For Permission Handling)
+        implementation(libs.accompanist.permissions)
+
+
+
+        // Coil (For image loading)
+        implementation(libs.coil.compose)
+    implementation("io.coil-kt:coil-compose:2.5.0")
+    implementation(libs.androidx.material.icons.extended)
+
+
 }

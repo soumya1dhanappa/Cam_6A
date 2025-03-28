@@ -1,7 +1,5 @@
 package com.fluffy.cam6a.ui.components
 
-import android.annotation.SuppressLint
-import android.app.Application
 import android.graphics.Bitmap
 import android.view.TextureView
 import androidx.compose.foundation.background
@@ -33,9 +31,8 @@ import com.fluffy.cam6a.filters.FiltersViewModel
 import com.fluffy.cam6a.filters.applyEclipseFilter
 import com.fluffy.cam6a.filters.applyGrayscaleFilter
 import com.fluffy.cam6a.filters.applySepiaFilter
+import com.fluffy.cam6a.utils.FileHelper
 
-// ✅ Enum for Filters
-enum class FilterType { NONE, GRAYSCALE, SEPIA, INVERT, WARM_TONE, COOL_TONE, ECLIPSE }
 
 @Composable
 fun FilterBar(
@@ -48,6 +45,8 @@ fun FilterBar(
     var expanded by remember { mutableStateOf(false) }
     var flashOn by remember { mutableStateOf(true) }
     val zoomLevel by filtersViewModel.zoomLevel.observeAsState(1.0f)
+    val context = LocalContext.current
+
 
     Column(
         modifier = Modifier
@@ -171,9 +170,11 @@ fun FilterBar(
 fun PreviewFilterBar() {
     val context = LocalContext.current
     val mockFiltersViewModel: FiltersViewModel = viewModel()
+    val fileHelper = FileHelper(context)
     val mockCameraHelper = CameraHelper(
         context = context,
-        textureView = TextureView(context)
+        textureView = TextureView(context), // Might cause issues in Compose preview
+        fileHelper1 = fileHelper
     )
 
     FilterBar(

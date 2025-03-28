@@ -10,7 +10,7 @@ import android.view.TextureView
 import androidx.lifecycle.*
 import com.fluffy.cam6a.camera.CameraHelper
 import com.fluffy.cam6a.filters.FiltersViewModel
-import com.fluffy.cam6a.ui.components.FilterType
+
 import com.fluffy.cam6a.utils.FileHelper
 import kotlinx.coroutines.*
 
@@ -33,8 +33,6 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
     private val _recentImages = MutableLiveData<List<Uri>>()
     val recentImages: LiveData<List<Uri>> get() = _recentImages
 
-    private val _selectedFilter = MutableLiveData<FilterType>().apply { value = FilterType.NONE }
-    val selectedFilter: LiveData<FilterType> get() = _selectedFilter
 
     private val _filteredBitmap = MutableLiveData<Bitmap?>()
     val filteredBitmap: LiveData<Bitmap?> = _filteredBitmap
@@ -46,15 +44,13 @@ class PhotoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Updates the selected filter */
-    fun setFilter(filterType: FilterType) {
-        _selectedFilter.postValue(filterType)
-    }
+
 
     /** Initializes TextureView and CameraHelper */
     fun setTextureView(textureView: TextureView) {
         textureViewState = textureView
         if (cameraHelper == null) {
-            cameraHelper = CameraHelper(context, textureView)
+            cameraHelper = CameraHelper(context, textureView, fileHelper)
         }
         openCamera()
     }
